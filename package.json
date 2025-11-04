@@ -53,6 +53,7 @@
       },
       "scripts": {
           "dev": "vite",
-          "build": "node ./node_modules/vite/bin/vite.js build"
+          "build": "node ./node_modules/vite/bin/vite.js build",
+          "vercel-build": "npm run build"
       }
   }
