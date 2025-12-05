@@ -46,8 +46,6 @@ const login = async (req, res) => {
             return res.status(httpStatus.UNAUTHORIZED).json({ message: "Invalid email or password" });
         }
 
-        const token = crypto.randomBytes(20).toString("hex");
-        user.token = token;
         user.lastActive = Date.now();
         await user.save();
 
@@ -57,7 +55,6 @@ const login = async (req, res) => {
 
         return res.status(httpStatus.OK).json({
             message: "Login Successful",
-            token,
             user: userResponse,
             count,
         });
@@ -88,13 +85,15 @@ const register = async (req, res) => {
         }
 
         const hashedPassword = await bcrypt.hash(password, 10);
-
+        const token = crypto.randomBytes(20).toString("hex");
         const newUser = new User({
             email,
             password: hashedPassword,
             username,
             cCode,
-            phoneNumber
+            phoneNumber,
+            token,
+            lastActive: Date.now()
         });
 
         await newUser.save();
@@ -102,6 +101,7 @@ const register = async (req, res) => {
 
         return res.status(httpStatus.CREATED).json({
             message: "User Registered Successfully",
+            token,
             user: userResponse
         });
     } catch (e) {
