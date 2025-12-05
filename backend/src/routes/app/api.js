@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { appLogin } from "../../controllers/login.control";
+import { appLogin } from "../../controllers/login.control.js";
 
 const appRoute = Router();
 
