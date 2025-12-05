@@ -173,12 +173,13 @@ const appLogin = async (req, res) => {
                 message: "App login successful",
                 token,
                 user: userResponse,
+                result: true,
             });
         }
 
         if (!lang || !gender) {
             return res.status(httpStatus.BAD_REQUEST).json({
-                message: "New users must provide lang and gender",
+                result: false,
             });
         }
 
@@ -238,6 +239,7 @@ const appLogin = async (req, res) => {
             message: "New user created & logged in",
             token,
             user: userResponse,
+            result: true,
         });
 
     } catch (e) {
