@@ -6,7 +6,6 @@ import crypto from "crypto";
 const createSafeUserResponse = (userDoc) => {
     return {
         username: userDoc.username,
-        email: userDoc.email,
         role: userDoc.role,
         cCode: userDoc.cCode,
         phoneNumber: userDoc.phoneNumber,
@@ -14,7 +13,10 @@ const createSafeUserResponse = (userDoc) => {
         lastActive: userDoc.lastActive,
         registered: userDoc.registered,
         sessions: userDoc.sessions || [],
-        tickets: userDoc.tickets || []
+        tickets: userDoc.tickets || [],
+        verified: !!userDoc.verified,
+        lang: userDoc.lang,
+        gender: userDoc.gender,
     };
 };
 
@@ -113,4 +115,108 @@ const register = async (req, res) => {
     }
 }
 
-export { login, register };
+const FIXED_OTP = "123456";
+
+const ALLOWED_LANGS = [
+    "hindi",
+    "english",
+    "tamil",
+    "malyalam",
+    "telugu",
+    "punjabi",
+    "gujarati",
+    "marathi",
+];
+
+const ALLOWED_GENDERS = ["male", "female", "other"];
+
+const appLogin = async (req, res) => {
+    const { phoneNumber, otp, cCode = "", lang, gender } = req.body;
+
+    if (!phoneNumber || !otp) {
+        return res
+            .status(httpStatus.BAD_REQUEST)
+            .json({ message: "Please provide phoneNumber and otp" });
+    }
+
+    if (otp !== FIXED_OTP) {
+        return res.status(httpStatus.UNAUTHORIZED).json({ message: "Invalid OTP" });
+    }
+
+    try {
+        let user = await User.findOne({ phoneNumber })
+            .populate({
+                path: "sessions",
+                select: "type status startTime endTime duration listenerId",
+            })
+            .populate({
+                path: "tickets",
+                select: "subject category status priority createdAt updatedAt",
+            });
+
+        const now = Date.now();
+        const token = crypto.randomBytes(20).toString("hex");
+        if (user) {
+            user.token = token;
+            user.verified = true;
+            user.lastActive = now;
+            await user.save();
+
+            const userResponse = createSafeUserResponse(user);
+
+            return res.status(httpStatus.OK).json({
+                message: "App login successful",
+                token,
+                user: userResponse,
+            });
+        }
+        if (!lang || !gender) {
+            return res.status(httpStatus.BAD_REQUEST).json({
+                message: "New users must provide lang and gender",
+            });
+        }
+
+        const langLower = String(lang).toLowerCase();
+        const genderLower = String(gender).toLowerCase();
+
+        if (!ALLOWED_LANGS.includes(langLower)) {
+            return res.status(httpStatus.BAD_REQUEST).json({
+                message: `Invalid lang. Allowed: ${ALLOWED_LANGS.join(", ")}`,
+            });
+        }
+
+        if (!ALLOWED_GENDERS.includes(genderLower)) {
+            return res.status(httpStatus.BAD_REQUEST).json({
+                message: `Invalid gender. Allowed: ${ALLOWED_GENDERS.join(", ")}`,
+            });
+        }
+
+        const newUser = new User({
+            username: phoneNumber,
+            cCode,
+            phoneNumber,
+            token,
+            verified: true,
+            lastActive: now,
+            registered: now,
+            lang: langLower,
+            gender: genderLower,
+        });
+
+        await newUser.save();
+
+        const userResponse = createSafeUserResponse(newUser);
+
+        return res.status(httpStatus.CREATED).json({
+            message: "New user created & logged in",
+            token,
+            user: userResponse,
+        });
+    } catch (e) {
+        console.error("appLogin error:", e);
+        return res
+            .status(httpStatus.INTERNAL_SERVER_ERROR)
+            .json({ message: `Something went wrong: ${e.message}` });
+    }
+};
+export { login, register, appLogin };

@@ -3,12 +3,10 @@ const userScheme = new Schema(
     {
         email: {
             type: String,
-            required: true,
             unique: true
         },
         password: {
             type: String,
-            required: true
         },
         role: {
             type: String,
@@ -19,7 +17,6 @@ const userScheme = new Schema(
 
         username: {
             type: String,
-            required: true,
             unique: true
         },
         cCode: {
@@ -29,6 +26,7 @@ const userScheme = new Schema(
 
         phoneNumber: {
             type: String,
+            unique: true,
             required: true,
         },
         status: {
@@ -50,6 +48,13 @@ const userScheme = new Schema(
         tickets: [{
             type: Schema.Types.ObjectId,
             ref: "SupportTicket"
+        }],
+        lang: [{
+            type: String,
+        }],
+        gender: [{
+            type: String,
+            enum: ["male", "female", "other"]
         }]
     }, {
     timestamps: true

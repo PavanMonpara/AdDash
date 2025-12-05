@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { login, register } from "../controllers/login.control.js";
+import { appLogin, login, register } from "../controllers/login.control.js";
 import session from "./sessionsApi.js";
 import user from "./usersApi.js";
 import listener from "./listenerApi.js";
@@ -14,6 +14,7 @@ const router = Router();
 
 router.route("/register").post(register);
 router.route("/login").post(login);
+router.route("/app/login").post(appLogin);
 
 router.use("/sessions", session);
 
