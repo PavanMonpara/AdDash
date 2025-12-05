@@ -1,7 +1,7 @@
 import express from "express";
 import mongoose from "mongoose";
-import routes from "./routes/api.js";
-import supportChatHandler from "./handlers/supportChat.js";
+import routes from "./src/routes/api.js";
+import supportChatHandler from "./src/handlers/supportChat.js";
 import { createServer } from "http";
 import { Server } from "socket.io";
 
