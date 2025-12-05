@@ -130,8 +130,12 @@ const ALLOWED_LANGS = [
 
 const ALLOWED_GENDERS = ["male", "female", "other"];
 
+const generateReferralCode = () => {
+    return "USR" + Math.floor(10000 + Math.random() * 90000);
+};
+
 const appLogin = async (req, res) => {
-    const { phoneNumber, otp, cCode = "", lang, gender } = req.body;
+    const { phoneNumber, otp, cCode = "", lang, gender, referralCode } = req.body;
 
     if (!phoneNumber || !otp) {
         return res
@@ -156,6 +160,7 @@ const appLogin = async (req, res) => {
 
         const now = Date.now();
         const token = crypto.randomBytes(20).toString("hex");
+
         if (user) {
             user.token = token;
             user.verified = true;
@@ -170,6 +175,7 @@ const appLogin = async (req, res) => {
                 user: userResponse,
             });
         }
+
         if (!lang || !gender) {
             return res.status(httpStatus.BAD_REQUEST).json({
                 message: "New users must provide lang and gender",
@@ -191,6 +197,19 @@ const appLogin = async (req, res) => {
             });
         }
 
+        let referredByUser = null;
+
+        if (referralCode) {
+            referredByUser = await User.findOne({ myReferralCode: referralCode });
+
+            if (!referredByUser) {
+                return res.status(httpStatus.BAD_REQUEST).json({
+                    message: "Invalid referral code",
+                });
+            }
+        }
+
+        const myReferralCode = generateReferralCode();
         const newUser = new User({
             username: phoneNumber,
             cCode,
@@ -201,9 +220,17 @@ const appLogin = async (req, res) => {
             registered: now,
             lang: langLower,
             gender: genderLower,
+            myReferralCode,
+            referredBy: referredByUser ? referredByUser._id : null,
         });
 
         await newUser.save();
+
+        if (referredByUser) {
+            referredByUser.referredUsers = referredByUser.referredUsers || [];
+            referredByUser.referredUsers.push(newUser._id);
+            await referredByUser.save();
+        }
 
         const userResponse = createSafeUserResponse(newUser);
 
@@ -212,6 +239,7 @@ const appLogin = async (req, res) => {
             token,
             user: userResponse,
         });
+
     } catch (e) {
         console.error("appLogin error:", e);
         return res
@@ -219,4 +247,5 @@ const appLogin = async (req, res) => {
             .json({ message: `Something went wrong: ${e.message}` });
     }
 };
+
 export { login, register, appLogin };
