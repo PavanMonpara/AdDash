@@ -40,7 +40,7 @@ const withdrawRequestSchema = new Schema(
       type: String,
     },
   },
-  { timestamps: true }
+  
 );
 
 const WithdrawRequest = mongoose.model("WithdrawRequest", withdrawRequestSchema);

@@ -11,7 +11,11 @@ const userScheme = new Schema(
         password: {
             type: String,
         },
-
+        alias: {
+            type: String,
+            trim: true,
+            default: "",
+        },
         role: {
             type: String,
             enum: ["superAdmin", "support", "finance", "compliance", "user", "listener"],
@@ -86,9 +90,7 @@ const userScheme = new Schema(
             ref: "User"
         }]
 
-    }, {
-    timestamps: true
-});
+    });
 
 const User = mongoose.model("User", userScheme);
 

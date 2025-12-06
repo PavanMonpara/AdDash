@@ -8,7 +8,7 @@ const createSafeUserResponse = (userDoc, sessions = [], tickets = []) => {
   return {
     _id: userDoc._id,
     userId: userDoc.username,
-    alias: userDoc.username,
+    alias: userDoc.alias || "",
     contact: {
       email: userDoc.email,
       phone: `${userDoc.cCode || ""} ${userDoc.phoneNumber || ""}`.trim(),
@@ -65,6 +65,7 @@ const getAllUsers = async (req, res) => {
         totalPages: Math.ceil(totalUsers / limit),
         currentPage: page,
         limit,
+        result: true,
       },
     });
   } catch (error) {
@@ -112,6 +113,7 @@ const getUserById = async (req, res) => {
     return res.status(httpStatus.OK).json({
       message: "User fetched successfully",
       data: userResponse,
+      result: true,
     });
   } catch (error) {
     console.error("Error fetching user:", error);
@@ -190,6 +192,7 @@ const updateUser = async (req, res) => {
     return res.status(httpStatus.OK).json({
       message: "User updated successfully",
       data: userResponse,
+      result: true,
     });
   } catch (error) {
     console.error("Error updating user:", error);
@@ -247,6 +250,7 @@ const deleteUser = async (req, res) => {
 
     return res.status(httpStatus.OK).json({
       message: "User and all associated sessions deleted successfully",
+      result: true,
     });
   } catch (error) {
     console.error("Error deleting user:", error);

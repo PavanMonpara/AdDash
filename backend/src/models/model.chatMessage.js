@@ -32,7 +32,7 @@ const chatMessageSchema = new Schema(
     flaggedReason: { type: String },
     flaggedAt: { type: Date },
   },
-  { timestamps: true }
+  
 );
 
 chatMessageSchema.pre(/^find/, function (next) {

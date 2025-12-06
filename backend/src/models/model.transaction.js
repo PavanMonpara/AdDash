@@ -14,12 +14,12 @@ const transactionSchema = new Schema(
     },
     type: {
       type: String,
-      enum: ["Deposit", "Withdrawal", "Session Payment", "Refund", "Commission"],
+      enum: ["deposit", "withdrawal", "session payment", "refund", "commission"],
       required: true,
     },
     method: {
       type: String,
-      enum: ["Razorpay", "Wallet", "Bank Transfer", "Auto"],
+      enum: ["razorpay", "wallet", "bank transfer", "auto"],
       required: true,
     },
     amount: {
@@ -40,7 +40,6 @@ const transactionSchema = new Schema(
       default: Date.now,
     },
   },
-  { timestamps: true }
 );
 
 const Transaction = mongoose.model("Transaction", transactionSchema);

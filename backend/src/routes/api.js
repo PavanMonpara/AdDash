@@ -9,6 +9,7 @@ import ticket from "./ticketApi.js";
 import chat from "./chatApi.js";
 import call from "./callApi.js";
 import roles from "./rolesApi.js";
+import faqsApi from "./faqsApi.js";
 
 const router = Router();
 
@@ -32,5 +33,7 @@ router.use("/chats", chat);
 router.use("/calls", call);
 
 router.use("/roles", roles);
+
+router.use("/faqs", faqsApi);
 
 export default router;

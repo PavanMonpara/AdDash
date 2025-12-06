@@ -1,4 +1,5 @@
 
+import mongoose from "mongoose";
 import Listener from "../models/model.listener.js";
 import { User } from "../models/model.login.js";
 
@@ -80,15 +81,43 @@ export const getListenerById = async (req, res) => {
 
 export const updateListener = async (req, res) => {
   try {
+    const { id } = req.params;
+    const updateData = req.body;
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ message: "Invalid listener ID" });
+    }
+
     const listener = await Listener.findByIdAndUpdate(
-      req.params.id,
-      req.body,
+      id,
+      updateData,
       { new: true }
     );
-    if (!listener) return res.status(404).json({ message: "Listener not found" });
-    res.status(200).json({ message: "Listener updated", listener });
+
+    if (!listener) {
+      return res.status(404).json({ message: "Listener not found" });
+    }
+    if (typeof updateData.status !== "undefined") {
+      const user = await User.findById(listener.userId);
+
+      if (user) {
+        if (updateData.status === "approved") {
+          user.role = "listener";
+        } else {
+          user.role = "user";
+        }
+        await user.save();
+      }
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Listener updated",
+      listener,
+    });
   } catch (error) {
-    res.status(400).json({ error: error.message });
+    console.error("updateListener error:", error);
+    return res.status(400).json({ error: error.message });
   }
 };
 
@@ -104,7 +133,7 @@ export const removeListener = async (req, res) => {
     }
 
     await Listener.findByIdAndDelete(req.params.id);
-    res.status(200).json({ message: "Listener removed and reverted to user" });
+    res.status(200).json({ message: "Listener removed and reverted to user" }, { success: true });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

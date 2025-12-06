@@ -20,8 +20,6 @@ const listenerSchema = new mongoose.Schema({
   sessions: { type: Number, default: 0 },
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now },
-}, {
-  timestamps: true
 });
 
 listenerSchema.pre("save", function (next) {

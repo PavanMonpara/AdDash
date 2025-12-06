@@ -22,6 +22,7 @@ const createSafeUserResponse = (userDoc) => {
 
 const login = async (req, res) => {
     const { email, password } = req.body;
+
     if (!email || !password) {
         return res.status(httpStatus.BAD_REQUEST).json({
             message: "Please provide email and password",
@@ -48,6 +49,10 @@ const login = async (req, res) => {
             return res.status(httpStatus.UNAUTHORIZED).json({ message: "Invalid email or password" });
         }
 
+        if (!user.token) {
+            user.token = crypto.randomBytes(20).toString("hex");
+        }
+
         user.lastActive = Date.now();
         await user.save();
 
@@ -57,16 +62,19 @@ const login = async (req, res) => {
 
         return res.status(httpStatus.OK).json({
             message: "Login Successful",
+            token: user.token,
             user: userResponse,
+            result: true,
             count,
         });
     } catch (error) {
         console.error("Login error:", error);
-        return res
-            .status(httpStatus.INTERNAL_SERVER_ERROR)
-            .json({ message: `Something went wrong: ${error.message}` });
+        return res.status(httpStatus.INTERNAL_SERVER_ERROR).json({
+            message: `Something went wrong: ${error.message}`,
+        });
     }
 };
+
 
 const register = async (req, res) => {
     const { email, password, username, cCode, phoneNumber } = req.body;

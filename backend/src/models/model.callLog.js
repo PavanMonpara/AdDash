@@ -36,7 +36,7 @@ const callLogSchema = new Schema(
     flaggedReason: { type: String },
     flaggedAt: { type: Date },
   },
-  { timestamps: true }
+  
 );
 
 callLogSchema.pre(/^find/, function (next) {
