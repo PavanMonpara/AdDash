@@ -35,9 +35,6 @@ const roleSchema = new Schema(
       default: 'Custom'
     },
     permissions: permissionsSchema
-  },
-  {
-    timestamps: true
   }
 );
 

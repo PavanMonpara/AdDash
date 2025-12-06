@@ -42,9 +42,7 @@ const supportTicketSchema = new Schema(
         sentAt: { type: Date, default: Date.now },
       },
     ],
-  }, {
-  timestamps: true
-}
+  }
 );
 
 supportTicketSchema.pre(/^find/, function (next) {

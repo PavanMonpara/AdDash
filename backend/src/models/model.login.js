@@ -28,7 +28,9 @@ const userScheme = new Schema(
             type: String,
             unique: true
         },
-
+        about: {
+            type: String,
+        },
         cCode: {
             type: String,
             required: true,
@@ -76,7 +78,8 @@ const userScheme = new Schema(
 
         myReferralCode: {
             type: String,
-            unique: true
+            unique: true,
+            sparse: true
         },
 
         referredBy: {

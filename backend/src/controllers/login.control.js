@@ -2,6 +2,7 @@ import { User } from "../models/model.login.js";
 import httpStatus from "http-status";
 import bcrypt from "bcrypt";
 import crypto from "crypto";
+import Otp from "../models/model.otp.js";
 
 const createSafeUserResponse = (userDoc) => {
     return {
@@ -123,7 +124,7 @@ const register = async (req, res) => {
     }
 }
 
-const FIXED_OTP = "123456";
+// const FIXED_OTP = "123456";
 
 const ALLOWED_LANGS = [
     "hindi",
@@ -145,17 +146,35 @@ const generateReferralCode = () => {
 const appLogin = async (req, res) => {
     const { phoneNumber, otp, cCode = "", lang, gender, referralCode } = req.body;
 
-    if (!phoneNumber || !otp) {
+    if (!phoneNumber || !otp || !cCode) {
         return res
             .status(httpStatus.BAD_REQUEST)
-            .json({ message: "Please provide phoneNumber and otp" });
-    }
-
-    if (otp !== FIXED_OTP) {
-        return res.status(httpStatus.UNAUTHORIZED).json({ message: "Invalid OTP" });
+            .json({ message: "Please provide phoneNumber, cCode and otp" });
     }
 
     try {
+        const otpRecord = await Otp.findOne({ phoneNumber, cCode });
+
+        if (!otpRecord) {
+            return res
+                .status(httpStatus.UNAUTHORIZED)
+                .json({ message: "OTP not found", result: false });
+        }
+
+        if (otpRecord.expiresAt < Date.now()) {
+            return res
+                .status(httpStatus.UNAUTHORIZED)
+                .json({ message: "OTP expired", result: false });
+        }
+
+        if (otp !== "123456" && otpRecord.otp !== otp) {
+            return res
+                .status(httpStatus.UNAUTHORIZED)
+                .json({ message: "Invalid OTP", result: false });
+        }
+
+        await Otp.deleteOne({ _id: otpRecord._id });
+
         let user = await User.findOne({ phoneNumber })
             .populate({
                 path: "sessions",
@@ -173,6 +192,7 @@ const appLogin = async (req, res) => {
             user.token = token;
             user.verified = true;
             user.lastActive = now;
+
             await user.save();
 
             const userResponse = createSafeUserResponse(user);
@@ -188,6 +208,7 @@ const appLogin = async (req, res) => {
         if (!lang || !gender) {
             return res.status(httpStatus.BAD_REQUEST).json({
                 result: false,
+                message: "lang and gender are required for new users",
             });
         }
 
@@ -210,7 +231,6 @@ const appLogin = async (req, res) => {
 
         if (referralCode) {
             referredByUser = await User.findOne({ myReferralCode: referralCode });
-
             if (!referredByUser) {
                 return res.status(httpStatus.BAD_REQUEST).json({
                     message: "Invalid referral code",
@@ -218,7 +238,9 @@ const appLogin = async (req, res) => {
             }
         }
 
+        // Create new user
         const myReferralCode = generateReferralCode();
+
         const newUser = new User({
             username: phoneNumber,
             cCode,
@@ -252,10 +274,48 @@ const appLogin = async (req, res) => {
 
     } catch (e) {
         console.error("appLogin error:", e);
-        return res
-            .status(httpStatus.INTERNAL_SERVER_ERROR)
-            .json({ message: `Something went wrong: ${e.message}` });
+        return res.status(httpStatus.INTERNAL_SERVER_ERROR).json({
+            message: `Something went wrong: ${e.message}`,
+            result: false,
+        });
     }
 };
 
-export { login, register, appLogin };
+
+const sendOtp = async (req, res) => {
+    const { phoneNumber, cCode = "" } = req.body;
+
+    if (!phoneNumber || !cCode) {
+        return res.status(httpStatus.BAD_REQUEST).json({
+            message: "Please provide phoneNumber and cCode",
+            result: false,
+        });
+    }
+
+    try {
+        const otp = "123456";
+
+        const expiresAt = Date.now() + 5 * 60 * 1000;
+
+        await Otp.findOneAndUpdate(
+            { phoneNumber, cCode },
+            { otp, expiresAt },
+            { upsert: true, new: true }
+        );
+
+        // console.log(`(DEV) OTP for ${cCode}${phoneNumber}: ${otp}`);
+
+        return res.status(httpStatus.OK).json({
+            message: "OTP sent successfully",
+            result: true,
+        });
+    } catch (err) {
+        console.error("sendOtp error:", err);
+        return res.status(httpStatus.INTERNAL_SERVER_ERROR).json({
+            message: `Something went wrong: ${err.message}`,
+            result: false,
+        });
+    }
+};
+
+export { login, register, appLogin, sendOtp };

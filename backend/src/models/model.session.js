@@ -1,12 +1,6 @@
 import mongoose, { Schema } from "mongoose";
 
 const sessionSchema = new Schema({
-    sessionId: {
-        type: String,
-        required: true,
-        unique: true,
-        trim: true
-    },
     user: {
         type: Schema.Types.ObjectId,
         ref: "User",
@@ -14,7 +8,7 @@ const sessionSchema = new Schema({
     },
     listener: {
         type: Schema.Types.ObjectId,
-        ref: "User",
+        ref: "Listener",
         required: true
     },
     type: {
@@ -45,8 +39,6 @@ const sessionSchema = new Schema({
         required: true,
         default: 0
     }
-}, {
-    timestamps: true
 });
 
 const Session = mongoose.model("Session", sessionSchema);
