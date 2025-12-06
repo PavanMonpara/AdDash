@@ -144,21 +144,24 @@ const generateReferralCode = () => {
 };
 
 const appLogin = async (req, res) => {
-    const { phoneNumber, otp, cCode = "", lang, gender, referralCode } = req.body;
+    const { phoneNumber, cCode = "", lang, gender, referralCode } = req.body;
 
-    if (!phoneNumber || !otp || !cCode) {
+    if (!phoneNumber || !cCode) {
         return res
             .status(httpStatus.BAD_REQUEST)
-            .json({ message: "Please provide phoneNumber, cCode and otp" });
+            .json({ message: "Please provide phoneNumber and cCode", result: false });
     }
 
     try {
         const otpRecord = await Otp.findOne({ phoneNumber, cCode });
 
-        if (!otpRecord) {
+        if (!otpRecord || !otpRecord.isVerified) {
             return res
                 .status(httpStatus.UNAUTHORIZED)
-                .json({ message: "OTP not found", result: false });
+                .json({
+                    message: "OTP not verified. Please verify OTP first.",
+                    result: false,
+                });
         }
 
         if (otpRecord.expiresAt < Date.now()) {
@@ -167,15 +170,10 @@ const appLogin = async (req, res) => {
                 .json({ message: "OTP expired", result: false });
         }
 
-        if (otp !== "123456" && otpRecord.otp !== otp) {
-            return res
-                .status(httpStatus.UNAUTHORIZED)
-                .json({ message: "Invalid OTP", result: false });
-        }
+        const verifiedPhone = otpRecord.phoneNumber;
+        const verifiedCCode = otpRecord.cCode;
 
-        await Otp.deleteOne({ _id: otpRecord._id });
-
-        let user = await User.findOne({ phoneNumber })
+        let user = await User.findOne({ phoneNumber: verifiedPhone })
             .populate({
                 path: "sessions",
                 select: "type status startTime endTime duration listenerId",
@@ -192,6 +190,8 @@ const appLogin = async (req, res) => {
             user.token = token;
             user.verified = true;
             user.lastActive = now;
+
+            await Otp.deleteMany({ phoneNumber: otpRecord.phoneNumber });
 
             await user.save();
 
@@ -218,12 +218,14 @@ const appLogin = async (req, res) => {
         if (!ALLOWED_LANGS.includes(langLower)) {
             return res.status(httpStatus.BAD_REQUEST).json({
                 message: `Invalid lang. Allowed: ${ALLOWED_LANGS.join(", ")}`,
+                result: false,
             });
         }
 
         if (!ALLOWED_GENDERS.includes(genderLower)) {
             return res.status(httpStatus.BAD_REQUEST).json({
                 message: `Invalid gender. Allowed: ${ALLOWED_GENDERS.join(", ")}`,
+                result: false,
             });
         }
 
@@ -234,17 +236,17 @@ const appLogin = async (req, res) => {
             if (!referredByUser) {
                 return res.status(httpStatus.BAD_REQUEST).json({
                     message: "Invalid referral code",
+                    result: false,
                 });
             }
         }
 
-        // Create new user
         const myReferralCode = generateReferralCode();
 
         const newUser = new User({
-            username: phoneNumber,
-            cCode,
-            phoneNumber,
+            username: verifiedPhone,
+            cCode: verifiedCCode,
+            phoneNumber: verifiedPhone,
             token,
             verified: true,
             lastActive: now,
@@ -280,6 +282,7 @@ const appLogin = async (req, res) => {
         });
     }
 };
+
 
 
 const sendOtp = async (req, res) => {
@@ -318,4 +321,52 @@ const sendOtp = async (req, res) => {
     }
 };
 
-export { login, register, appLogin, sendOtp };
+const verifyOtp = async (req, res) => {
+    const { phoneNumber, otp, cCode = "" } = req.body;
+
+    if (!phoneNumber || !otp || !cCode) {
+        return res
+            .status(httpStatus.BAD_REQUEST)
+            .json({ message: "Please provide phoneNumber, cCode and otp", result: false });
+    }
+
+    try {
+        const otpRecord = await Otp.findOne({ phoneNumber, cCode });
+
+        if (!otpRecord) {
+            return res
+                .status(httpStatus.UNAUTHORIZED)
+                .json({ message: "OTP not found", result: false });
+        }
+
+        if (otpRecord.expiresAt < Date.now()) {
+            return res
+                .status(httpStatus.UNAUTHORIZED)
+                .json({ message: "OTP expired", result: false });
+        }
+
+        if (otp !== "123456" && otpRecord.otp !== otp) {
+            return res
+                .status(httpStatus.UNAUTHORIZED)
+                .json({ message: "Invalid OTP", result: false });
+        }
+
+        otpRecord.isVerified = true;
+        await otpRecord.save();
+
+        return res.status(httpStatus.OK).json({
+            message: "OTP verified successfully",
+            result: true,
+            phoneNumber: otpRecord.phoneNumber,
+            cCode: otpRecord.cCode,
+        });
+    } catch (e) {
+        console.error("verifyOtp error:", e);
+        return res.status(httpStatus.INTERNAL_SERVER_ERROR).json({
+            message: `Something went wrong: ${e.message}`,
+            result: false,
+        });
+    }
+};
+
+export { login, register, appLogin, sendOtp, verifyOtp };
