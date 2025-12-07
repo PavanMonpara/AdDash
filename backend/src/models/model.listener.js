@@ -1,0 +1,31 @@
+import mongoose from "mongoose";
+
+const listenerSchema = new mongoose.Schema({
+  userId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "User",
+    required: true,
+    unique: true,
+  },
+  expertise: [{ type: String }],
+  experience: { type: String, required: true },
+  rating: { type: Number, default: 0 },
+  status: {
+    type: String,
+    enum: ["approved", "pending", "suspended"],
+    default: "pending",
+  },
+  earnings: { type: Number, default: 0 },
+  commission: { type: String, default: "20%" },
+  sessions: { type: Number, default: 0 },
+  createdAt: { type: Date, default: Date.now },
+  updatedAt: { type: Date, default: Date.now },
+});
+
+listenerSchema.pre("save", function (next) {
+  this.updatedAt = Date.now();
+  next();
+});
+
+const Listener = mongoose.model("Listener", listenerSchema);
+export default Listener;
