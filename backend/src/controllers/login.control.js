@@ -3,6 +3,19 @@ import httpStatus from "http-status";
 import bcrypt from "bcrypt";
 import crypto from "crypto";
 import Otp from "../models/model.otp.js";
+import jwt from "jsonwebtoken";
+import dotenv from "dotenv";
+dotenv.config();
+
+const JWT_SECRET = process.env.JWT_SECRET;
+const ACCESS_TOKEN_EXPIRE = process.env.ACCESS_TOKEN_EXPIRE || "15m";
+const REFRESH_TOKEN_EXPIRE = process.env.REFRESH_TOKEN_EXPIRE || "7d";
+
+// Agar .env mein secret nahi mila toh warning + crash (production safe)
+if (!JWT_SECRET) {
+  console.error("FATAL ERROR: JWT_SECRET is not defined in .env file!");
+  process.exit(1);
+}
 
 const createSafeUserResponse = (userDoc) => {
     return {
@@ -21,59 +34,74 @@ const createSafeUserResponse = (userDoc) => {
     };
 };
 
-const login = async (req, res) => {
+const login = async (req, res) => {             
+  try {
     const { email, password } = req.body;
 
     if (!email || !password) {
-        return res.status(httpStatus.BAD_REQUEST).json({
-            message: "Please provide email and password",
-        });
+      return res.status(400).json({
+        success: false,
+        message: "Email and password are required",
+      });
     }
 
-    try {
-        const user = await User.findOne({ email })
-            .populate({
-                path: "sessions",
-                select: "type status startTime endTime duration listenerId",
-            })
-            .populate({
-                path: "tickets",
-                select: "subject category status priority createdAt updatedAt",
-            });
-
-        if (!user) {
-            return res.status(httpStatus.NOT_FOUND).json({ message: "User not found" });
-        }
-
-        const isPassword = await bcrypt.compare(password, user.password);
-        if (!isPassword) {
-            return res.status(httpStatus.UNAUTHORIZED).json({ message: "Invalid email or password" });
-        }
-
-        if (!user.token) {
-            user.token = crypto.randomBytes(20).toString("hex");
-        }
-
-        user.lastActive = Date.now();
-        await user.save();
-
-        const userResponse = createSafeUserResponse(user);
-
-        const count = await User.countDocuments({ role: "user" });
-
-        return res.status(httpStatus.OK).json({
-            message: "Login Successful",
-            token: user.token,
-            user: userResponse,
-            result: true,
-            count,
-        });
-    } catch (error) {
-        console.error("Login error:", error);
-        return res.status(httpStatus.INTERNAL_SERVER_ERROR).json({
-            message: `Something went wrong: ${error.message}`,
-        });
+    const user = await User.findOne({ email }).select("+password");
+    if (!user) {
+      return res.status(401).json({
+        success: false,
+        message: "Invalid email or password",
+      });
     }
+
+    const isMatch = await bcrypt.compare(password, user.password);
+    if (!isMatch) {
+      return res.status(401).json({
+        success: false,
+        message: "Invalid email or password",
+      });
+    }
+
+    // YEHI SABSE IMPORTANT CHANGE HAI
+    const accessToken = jwt.sign(
+      {
+        id: user._id,
+        email: user.email,
+        role: user.role,                    // ← singular role (DB se aaya)
+        roles: user.roles || [],            // ← optional array (future ke liye)
+      },
+      JWT_SECRET,
+      { expiresIn: ACCESS_TOKEN_EXPIRE }
+    );
+
+    const refreshToken = jwt.sign(
+      { id: user._id },
+      JWT_SECRET,
+      { expiresIn: REFRESH_TOKEN_EXPIRE }
+    );
+
+    return res.status(200).json({
+      success: true,
+      message: "Login successful",
+      data: {
+        user: {
+          id: user._id,
+          email: user.email,
+          fullName: user.fullName || "",
+          role: user.role,                    // ← yahan bhi bhej do (frontend ke liye)
+          roles: user.roles || [],
+          profilePicture: user.profilePicture || "",
+        },
+        accessToken,
+        refreshToken,
+      },
+    });
+  } catch (error) {
+    console.error("Login Error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Server error, try again later",
+    });
+  }
 };
 
 
@@ -144,143 +172,144 @@ const generateReferralCode = () => {
 };
 
 const appLogin = async (req, res) => {
-    const { phoneNumber, cCode = "", lang, gender, referralCode } = req.body;
+  const { phoneNumber, cCode = "", lang, gender, referralCode } = req.body;
 
-    if (!phoneNumber || !cCode) {
-        return res
-            .status(httpStatus.BAD_REQUEST)
-            .json({ message: "Please provide phoneNumber and cCode", result: false });
+  if (!phoneNumber || !cCode) {
+    return res
+      .status(httpStatus.BAD_REQUEST)
+      .json({ message: "Please provide phoneNumber and cCode", result: false });
+  }
+
+  try {
+    const otpRecord = await Otp.findOne({ phoneNumber, cCode });
+
+    if (!otpRecord || !otpRecord.isVerified || otpRecord.expiresAt < Date.now()) {
+      return res
+        .status(httpStatus.UNAUTHORIZED)
+        .json({ message: "Invalid or expired OTP", result: false });
     }
 
-    try {
-        const otpRecord = await Otp.findOne({ phoneNumber, cCode });
+    let user = await User.findOne({ phoneNumber })
+      .populate({
+        path: "sessions",
+        select: "type status startTime endTime duration listenerId",
+      })
+      .populate({
+        path: "tickets",
+        select: "subject category status priority createdAt updatedAt",
+      });
 
-        if (!otpRecord || !otpRecord.isVerified) {
-            return res
-                .status(httpStatus.UNAUTHORIZED)
-                .json({
-                    message: "OTP not verified. Please verify OTP first.",
-                    result: false,
-                });
-        }
+    const now = Date.now();
+    const sessionToken = crypto.randomBytes(20).toString("hex"); // legacy app token
 
-        if (otpRecord.expiresAt < Date.now()) {
-            return res
-                .status(httpStatus.UNAUTHORIZED)
-                .json({ message: "OTP expired", result: false });
-        }
-
-        const verifiedPhone = otpRecord.phoneNumber;
-        const verifiedCCode = otpRecord.cCode;
-
-        let user = await User.findOne({ phoneNumber: verifiedPhone })
-            .populate({
-                path: "sessions",
-                select: "type status startTime endTime duration listenerId",
-            })
-            .populate({
-                path: "tickets",
-                select: "subject category status priority createdAt updatedAt",
-            });
-
-        const now = Date.now();
-        const token = crypto.randomBytes(20).toString("hex");
-
-        if (user) {
-            user.token = token;
-            user.verified = true;
-            user.lastActive = now;
-
-            await Otp.deleteMany({ phoneNumber: otpRecord.phoneNumber });
-
-            await user.save();
-
-            const userResponse = createSafeUserResponse(user);
-
-            return res.status(httpStatus.OK).json({
-                message: "App login successful",
-                token,
-                user: userResponse,
-                result: true,
-            });
-        }
-
-        if (!lang || !gender) {
-            return res.status(httpStatus.BAD_REQUEST).json({
-                result: false,
-                message: "lang and gender are required for new users",
-            });
-        }
-
-        const langLower = String(lang).toLowerCase();
-        const genderLower = String(gender).toLowerCase();
-
-        if (!ALLOWED_LANGS.includes(langLower)) {
-            return res.status(httpStatus.BAD_REQUEST).json({
-                message: `Invalid lang. Allowed: ${ALLOWED_LANGS.join(", ")}`,
-                result: false,
-            });
-        }
-
-        if (!ALLOWED_GENDERS.includes(genderLower)) {
-            return res.status(httpStatus.BAD_REQUEST).json({
-                message: `Invalid gender. Allowed: ${ALLOWED_GENDERS.join(", ")}`,
-                result: false,
-            });
-        }
-
-        let referredByUser = null;
-
-        if (referralCode) {
-            referredByUser = await User.findOne({ myReferralCode: referralCode });
-            if (!referredByUser) {
-                return res.status(httpStatus.BAD_REQUEST).json({
-                    message: "Invalid referral code",
-                    result: false,
-                });
-            }
-        }
-
-        const myReferralCode = generateReferralCode();
-
-        const newUser = new User({
-            username: verifiedPhone,
-            cCode: verifiedCCode,
-            phoneNumber: verifiedPhone,
-            token,
-            verified: true,
-            lastActive: now,
-            registered: now,
-            lang: langLower,
-            gender: genderLower,
-            myReferralCode,
-            referredBy: referredByUser ? referredByUser._id : null,
+    if (!user) {
+      // New user
+      if (!lang || !gender) {
+        return res.status(httpStatus.BAD_REQUEST).json({
+          result: false,
+          message: "lang and gender are required for new users",
         });
+      }
 
-        await newUser.save();
+      const langLower = String(lang).toLowerCase();
+      const genderLower = String(gender).toLowerCase();
 
-        if (referredByUser) {
-            referredByUser.referredUsers = referredByUser.referredUsers || [];
-            referredByUser.referredUsers.push(newUser._id);
-            await referredByUser.save();
-        }
-
-        const userResponse = createSafeUserResponse(newUser);
-
-        return res.status(httpStatus.CREATED).json({
-            message: "New user created & logged in",
-            token,
-            user: userResponse,
-            result: true,
+      if (!ALLOWED_LANGS.includes(langLower)) {
+        return res.status(httpStatus.BAD_REQUEST).json({
+          message: `Invalid lang. Allowed: ${ALLOWED_LANGS.join(", ")}`,
+          result: false,
         });
+      }
+      if (!ALLOWED_GENDERS.includes(genderLower)) {
+        return res.status(httpStatus.BAD_REQUEST).json({
+          message: `Invalid gender. Allowed: ${ALLOWED_GENDERS.join(", ")}`,
+          result: false,
+        });
+      }
 
-    } catch (e) {
-        console.error("appLogin error:", e);
-        return res.status(httpStatus.INTERNAL_SERVER_ERROR).json({
-            message: `Something went wrong: ${e.message}`,
+      let referredByUser = null;
+      if (referralCode) {
+        referredByUser = await User.findOne({ myReferralCode: referralCode });
+        if (!referredByUser) {
+          return res.status(httpStatus.BAD_REQUEST).json({
+            message: "Invalid referral code",
             result: false,
-        });
+          });
+        }
+      }
+
+      const myReferralCode = generateReferralCode();
+
+      user = new User({
+        username: phoneNumber,
+        cCode,
+        phoneNumber,
+        token: sessionToken,
+        verified: true,
+        lastActive: now,
+        registered: now,
+        lang: langLower,
+        gender: genderLower,
+        myReferralCode,
+        referredBy: referredByUser?._id || null,
+        role: "user"
+      });
+
+      await user.save();
+
+      if (referredByUser) {
+        referredByUser.referredUsers = referredByUser.referredUsers || [];
+        referredByUser.referredUsers.push(user._id);
+        await referredByUser.save();
+      }
+    } else {
+      // Existing user
+      user.token = sessionToken;
+      user.verified = true;
+      user.lastActive = now;
+      await user.save();
     }
+
+    // OTP delete kar do
+    await Otp.deleteMany({ phoneNumber });
+
+    // JWT TOKEN BHI BHEJO (Yeh wahi hai jo email login deta hai)
+    const accessToken = jwt.sign(
+      {
+        id: user._id,
+        phoneNumber: user.phoneNumber,
+        role: user.role || "user",
+        roles: user.roles || []
+      },
+      JWT_SECRET,
+      { expiresIn: ACCESS_TOKEN_EXPIRE }
+    );
+
+    const refreshToken = jwt.sign(
+      { id: user._id },
+      JWT_SECRET,
+      { expiresIn: REFRESH_TOKEN_EXPIRE }
+    );
+
+    const userResponse = createSafeUserResponse(user);
+
+    return res.status(user.registered ? httpStatus.OK : httpStatus.CREATED).json({
+      success: true,
+      message: user.registered ? "Login successful" : "New user created & logged in",
+      result: true,
+      token: sessionToken,        // purana app token (jo pehle se use ho raha tha)
+      accessToken,                // NAYA: JWT Token (web/admin panel ke liye)
+      refreshToken,               // NAYA: Refresh Token
+      user: userResponse
+    });
+
+  } catch (e) {
+    console.error("appLogin error:", e);
+    return res.status(httpStatus.INTERNAL_SERVER_ERROR).json({
+      message: `Something went wrong: ${e.message}`,
+      result: false,
+    });
+  }
 };
 
 

@@ -1,9 +1,12 @@
+// src/controllers/users.control.js
+
 import { User } from "../models/model.login.js";
 import { Session } from "../models/model.session.js";
 import httpStatus from "http-status";
 import bcrypt from "bcrypt";
 import mongoose from "mongoose";
 
+// Safe response banao taaki password, token kabhi na jaaye
 const createSafeUserResponse = (userDoc, sessions = [], tickets = []) => {
   return {
     _id: userDoc._id,
@@ -25,7 +28,8 @@ const createSafeUserResponse = (userDoc, sessions = [], tickets = []) => {
   };
 };
 
-const getAllUsers = async (req, res) => {
+// GET ALL USERS (with pagination & filters)
+export const getAllUsers = async (req, res) => {
   try {
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 10;
@@ -33,7 +37,7 @@ const getAllUsers = async (req, res) => {
 
     const filter = {};
     if (req.query.role) filter.role = req.query.role;
-    else filter.role = "user";
+    else filter.role = "user"; // default sirf normal users dikhao
     if (req.query.status) filter.status = req.query.status;
 
     const users = await User.find(filter)
@@ -58,6 +62,7 @@ const getAllUsers = async (req, res) => {
     );
 
     return res.status(httpStatus.OK).json({
+      success: true,
       message: "Users fetched successfully",
       data: transformedUsers,
       pagination: {
@@ -65,24 +70,27 @@ const getAllUsers = async (req, res) => {
         totalPages: Math.ceil(totalUsers / limit),
         currentPage: page,
         limit,
-        result: true,
       },
     });
   } catch (error) {
     console.error("Error fetching users:", error);
-    return res
-      .status(httpStatus.INTERNAL_SERVER_ERROR)
-      .json({ message: `Something went wrong: ${error.message}` });
+    return res.status(httpStatus.INTERNAL_SERVER_ERROR).json({
+      success: false,
+      message: "Failed to fetch users",
+      error: error.message,
+    });
   }
 };
 
-const getUserById = async (req, res) => {
+// GET SINGLE USER BY ID
+export const getUserById = async (req, res) => {
   const { id } = req.params;
 
   if (!mongoose.Types.ObjectId.isValid(id)) {
-    return res
-      .status(httpStatus.BAD_REQUEST)
-      .json({ message: "Invalid user ID" });
+    return res.status(httpStatus.BAD_REQUEST).json({
+      success: false,
+      message: "Invalid user ID",
+    });
   }
 
   try {
@@ -99,9 +107,10 @@ const getUserById = async (req, res) => {
       .lean();
 
     if (!user) {
-      return res
-        .status(httpStatus.NOT_FOUND)
-        .json({ message: "User not found" });
+      return res.status(httpStatus.NOT_FOUND).json({
+        success: false,
+        message: "User not found",
+      });
     }
 
     const userResponse = createSafeUserResponse(
@@ -111,76 +120,78 @@ const getUserById = async (req, res) => {
     );
 
     return res.status(httpStatus.OK).json({
+      success: true,
       message: "User fetched successfully",
       data: userResponse,
-      result: true,
     });
   } catch (error) {
     console.error("Error fetching user:", error);
-    return res
-      .status(httpStatus.INTERNAL_SERVER_ERROR)
-      .json({ message: `Something went wrong: ${error.message}` });
+    return res.status(httpStatus.INTERNAL_SERVER_ERROR).json({
+      success: false,
+      message: "Server error",
+      error: error.message,
+    });
   }
 };
 
-const updateUser = async (req, res) => {
+// UPDATE USER
+export const updateUser = async (req, res) => {
   const { id } = req.params;
 
   if (!mongoose.Types.ObjectId.isValid(id)) {
-    return res
-      .status(httpStatus.BAD_REQUEST)
-      .json({ message: "Invalid user ID" });
+    return res.status(httpStatus.BAD_REQUEST).json({
+      success: false,
+      message: "Invalid user ID",
+    });
   }
 
-  const updateData = req.body;
+  const updateData = { ...req.body };
 
   try {
+    // Password hash karo agar diya gaya ho
     if (updateData.password) {
       if (updateData.password.trim() === "") {
-        return res
-          .status(httpStatus.BAD_REQUEST)
-          .json({ message: "Password cannot be empty" });
+        return res.status(httpStatus.BAD_REQUEST).json({
+          success: false,
+          message: "Password cannot be empty",
+        });
       }
       updateData.password = await bcrypt.hash(updateData.password, 10);
-    } else {
-      delete updateData.password;
     }
 
+    // Email ya username duplicate check
     if (updateData.email || updateData.username) {
       const existingUser = await User.findOne({
-        $or: [{ email: updateData.email }, { username: updateData.username }],
+        $or: [
+          { email: updateData.email },
+          { username: updateData.username },
+        ],
         _id: { $ne: id },
       });
 
       if (existingUser) {
-        const message =
-          existingUser.email === updateData.email
-            ? "Another user with this email already exists"
-            : "Another user with this username already exists";
-        return res.status(httpStatus.CONFLICT).json({ message });
+        const field = existingUser.email === updateData.email ? "Email" : "Username";
+        return res.status(httpStatus.CONFLICT).json({
+          success: false,
+          message: `${field} already exists`,
+        });
       }
     }
 
     const updatedUser = await User.findByIdAndUpdate(
       id,
       { $set: updateData },
-      { new: true, runValidators: true, context: "query" }
+      { new: true, runValidators: true }
     )
       .select("-password -token -__v")
-      .populate({
-        path: "sessions",
-        select: "type status startTime endTime duration listener user",
-      })
-      .populate({
-        path: "tickets",
-        select: "subject category status priority createdAt updatedAt",
-      })
+      .populate("sessions tickets")
       .lean();
 
     if (!updatedUser) {
-      return res
-        .status(httpStatus.NOT_FOUND)
-        .json({ message: "User not found, update failed" });
+      return res.status(httpStatus.NOT_FOUND).json({
+        success: false,
+        message: "User not found",
+      });
     }
 
     const userResponse = createSafeUserResponse(
@@ -190,33 +201,39 @@ const updateUser = async (req, res) => {
     );
 
     return res.status(httpStatus.OK).json({
+      success: true,
       message: "User updated successfully",
       data: userResponse,
-      result: true,
     });
   } catch (error) {
     console.error("Error updating user:", error);
     if (error.code === 11000) {
-      return res
-        .status(httpStatus.CONFLICT)
-        .json({ message: "Email or username already exists." });
+      return res.status(httpStatus.CONFLICT).json({
+        success: false,
+        message: "Email or username already taken",
+      });
     }
-    return res
-      .status(httpStatus.INTERNAL_SERVER_ERROR)
-      .json({ message: `Something went wrong: ${error.message}` });
+    return res.status(httpStatus.INTERNAL_SERVER_ERROR).json({
+      success: false,
+      message: "Update failed",
+      error: error.message,
+    });
   }
 };
 
-const deleteUser = async (req, res) => {
+// DELETE USER + ALL SESSIONS
+export const deleteUser = async (req, res) => {
   const { id } = req.params;
 
   if (!mongoose.Types.ObjectId.isValid(id)) {
-    return res
-      .status(httpStatus.BAD_REQUEST)
-      .json({ message: "Invalid user ID" });
+    return res.status(httpStatus.BAD_REQUEST).json({
+      success: false,
+      message: "Invalid user ID",
+    });
   }
 
   try {
+    // Pehle saari sessions dhundo jisme ye user involved hai
     const sessionsToDelete = await Session.find({
       $or: [{ user: id }, { listener: id }],
     }).lean();
@@ -224,13 +241,13 @@ const deleteUser = async (req, res) => {
     if (sessionsToDelete.length > 0) {
       const sessionIds = sessionsToDelete.map((s) => s._id);
 
-      const otherUserIds = sessionsToDelete.reduce((acc, session) => {
+      // Dusre users se in sessions ko hatao
+      const otherUserIds = new Set();
+      sessionsToDelete.forEach((session) => {
         const userIdStr = id.toString();
-        const otherUser =
-          session.user.toString() !== userIdStr ? session.user : session.listener;
-        acc.add(otherUser.toString());
-        return acc;
-      }, new Set());
+        const other = session.user.toString() !== userIdStr ? session.user : session.listener;
+        if (other) otherUserIds.add(other.toString());
+      });
 
       await User.updateMany(
         { _id: { $in: Array.from(otherUserIds) } },
@@ -243,21 +260,22 @@ const deleteUser = async (req, res) => {
     const deletedUser = await User.findByIdAndDelete(id);
 
     if (!deletedUser) {
-      return res
-        .status(httpStatus.NOT_FOUND)
-        .json({ message: "User not found, delete failed" });
+      return res.status(httpStatus.NOT_FOUND).json({
+        success: false,
+        message: "User not found",
+      });
     }
 
     return res.status(httpStatus.OK).json({
-      message: "User and all associated sessions deleted successfully",
-      result: true,
+      success: true,
+      message: "User and all related sessions deleted successfully",
     });
   } catch (error) {
     console.error("Error deleting user:", error);
-    return res
-      .status(httpStatus.INTERNAL_SERVER_ERROR)
-      .json({ message: `Something went wrong: ${error.message}` });
+    return res.status(httpStatus.INTERNAL_SERVER_ERROR).json({
+      success: false,
+      message: "Delete failed",
+      error: error.message,
+    });
   }
 };
-
-export { getAllUsers, getUserById, updateUser, deleteUser };
