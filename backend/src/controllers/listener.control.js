@@ -2,6 +2,8 @@
 import mongoose from "mongoose";
 import Listener from "../models/model.listener.js";
 import { User } from "../models/model.login.js";
+import path from "path";
+import fs from "fs";
 
 export const promoteToListener = async (req, res) => {
   try {
@@ -200,13 +202,20 @@ export const getAvailableListeners = async (req, res) => {
 export const updateListener = async (req, res) => {
   try {
     const { id } = req.params;
-    const updateData = req.body;
 
     if (!mongoose.Types.ObjectId.isValid(id)) {
-      return res.status(400).json({ message: "Invalid listener ID" });
+      return res.status(400).json({ success: false, message: "Invalid listener ID" });
     }
 
-    const allowedFields = [
+    const listener = await Listener.findById(id);
+    if (!listener) {
+      return res.status(404).json({ success: false, message: "Listener not found" });
+    }
+
+    const updateData = req.body;
+
+    // Allowed fields for Listener
+    const allowedListenerFields = [
       "expertise",
       "experience",
       "aboutMe",
@@ -216,39 +225,54 @@ export const updateListener = async (req, res) => {
       "status",
     ];
 
-    const filteredUpdate = {};
-    Object.keys(updateData).forEach((key) => {
-      if (allowedFields.includes(key)) {
-        filteredUpdate[key] = updateData[key];
+    // Update Listener fields
+    allowedListenerFields.forEach((field) => {
+      if (updateData[field] !== undefined) {
+        listener[field] = updateData[field];
       }
     });
 
-    const listener = await Listener.findByIdAndUpdate(id, filteredUpdate, {
-      new: true,
-      runValidators: true,
-    });
+    
+    if (req.file) {
+      const profilePicUrl = `/uploads/profiles/${req.file.filename}`;
+      // Ya agar Cloudinary use kar raha hai toh: req.file.path (cloudinary URL)
 
-    if (!listener) {
-      return res.status(404).json({ message: "Listener not found" });
+      // Save photo URL in User model
+      await User.findByIdAndUpdate(listener.userId, {
+        profilePic: profilePicUrl
+      });
     }
 
-    // Update user role if status changes
+    // Update status → change user role
     if (updateData.status) {
-      const user = await User.findById(listener.userId);
-      if (user) {
-        user.role = updateData.status === "approved" ? "listener" : "user";
-        await user.save();
-      }
+      await User.findByIdAndUpdate(listener.userId, {
+        role: updateData.status === "approved" ? "listener" : "user"
+      });
     }
+
+    await listener.save();
+
+    // Populate user with latest profilePic
+    const updatedListener = await Listener.findById(id).populate({
+      path: "userId",
+      select: "username alias phoneNumber gender lang about profilePic"
+    });
 
     res.status(200).json({
       success: true,
-      message: "Listener updated successfully",
-      listener,
+      message: "Listener profile updated successfully",
+      listener: {
+        ...updatedListener.toObject(),
+        user: {
+          ...updatedListener.userId.toObject(),
+          profilePic: updatedListener.userId.profilePic || null
+        }
+      }
     });
+
   } catch (error) {
     console.error("updateListener error:", error);
-    res.status(400).json({ error: error.message });
+    res.status(500).json({ success: false, message: "Server error", error: error.message });
   }
 };
 

@@ -12,12 +12,20 @@ import {
 import { verifyToken } from "../middlewares/verifyToken.js";
 import { isSuperAdmin } from "../middlewares/isSuperAdmin.js";
 import { isAuthenticated } from "../middlewares/isAuthenticated.js";
+import { uploadProfilePic } from "../middlewares/upload.js"; // ye naya wala hai
 
 const listener = Router();
 
 // SuperAdmin only
 listener.post("/promote", verifyToken, isSuperAdmin, promoteToListener);
-listener.put("/:id", verifyToken, isSuperAdmin, updateListener);
+
+
+listener.put("/:id", 
+  verifyToken,
+  isAuthenticated,
+  uploadProfilePic,           // ← YE NAYA HAI
+  updateListener
+);
 listener.delete("/:id", verifyToken, isSuperAdmin, removeListener);
 
 // Admin + Support etc can see all
