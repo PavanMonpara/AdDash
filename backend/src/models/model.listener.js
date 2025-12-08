@@ -1,3 +1,4 @@
+// models/model.listener.js
 import mongoose from "mongoose";
 
 const listenerSchema = new mongoose.Schema({
@@ -9,7 +10,11 @@ const listenerSchema = new mongoose.Schema({
   },
   expertise: [{ type: String }],
   experience: { type: String, required: true },
+  aboutMe: { type: String, default: "" },
+  myStory: { type: String, default: "" },
+  chargesPerMinute: { type: Number, required: true, min: 0 },
   rating: { type: Number, default: 0 },
+  totalRatings: { type: Number, default: 0 },
   status: {
     type: String,
     enum: ["approved", "pending", "suspended"],

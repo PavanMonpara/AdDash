@@ -315,87 +315,140 @@ const appLogin = async (req, res) => {
 
 
 const sendOtp = async (req, res) => {
-    const { phoneNumber, cCode = "" } = req.body;
+  const { phoneNumber, cCode = "" } = req.body;
 
-    if (!phoneNumber || !cCode) {
-        return res.status(httpStatus.BAD_REQUEST).json({
-            message: "Please provide phoneNumber and cCode",
-            result: false,
-        });
-    }
+  if (!phoneNumber || !cCode) {
+    return res.status(httpStatus.BAD_REQUEST).json({
+      success: false,
+      message: "phoneNumber and cCode required",
+    });
+  }
 
-    try {
-        const otp = "123456";
+  try {
+    const otp = "123456"; // dev mode
+    const expiresAt = Date.now() + 5 * 60 * 1000;
 
-        const expiresAt = Date.now() + 5 * 60 * 1000;
+    await Otp.findOneAndUpdate(
+      { phoneNumber, cCode },
+      { otp, expiresAt, isVerified: false },
+      { upsert: true, new: true }
+    );
 
-        await Otp.findOneAndUpdate(
-            { phoneNumber, cCode },
-            { otp, expiresAt },
-            { upsert: true, new: true }
-        );
-
-        // console.log(`(DEV) OTP for ${cCode}${phoneNumber}: ${otp}`);
-
-        return res.status(httpStatus.OK).json({
-            message: "OTP sent successfully",
-            result: true,
-        });
-    } catch (err) {
-        console.error("sendOtp error:", err);
-        return res.status(httpStatus.INTERNAL_SERVER_ERROR).json({
-            message: `Something went wrong: ${err.message}`,
-            result: false,
-        });
-    }
+    return res.json({
+      success: true,
+      message: "OTP sent successfully (DEV: 123456)",
+    });
+  } catch (err) {
+    console.error("sendOtp error:", err);
+    return res.status(500).json({ success: false, message: err.message });
+  }
 };
 
+// verifyOtp – sirf verify karega + batayega registered hai ya nahi
+// verifyOtp – AB DIRECT LOGIN BHI KAREGA JAB USER PURANA HAI
 const verifyOtp = async (req, res) => {
-    const { phoneNumber, otp, cCode = "" } = req.body;
+  const { phoneNumber, otp, cCode = "" } = req.body;
 
-    if (!phoneNumber || !otp || !cCode) {
-        return res
-            .status(httpStatus.BAD_REQUEST)
-            .json({ message: "Please provide phoneNumber, cCode and otp", result: false });
+  if (!phoneNumber || !otp || !cCode) {
+    return res.status(httpStatus.BAD_REQUEST).json({
+      success: false,
+      message: "phoneNumber, cCode and otp are required",
+      result: false,
+    });
+  }
+
+  try {
+    const otpRecord = await Otp.findOne({ phoneNumber, cCode });
+
+    if (!otpRecord) {
+      return res.status(httpStatus.UNAUTHORIZED).json({
+        success: false,
+        message: "OTP not found",
+        result: false,
+      });
     }
 
-    try {
-        const otpRecord = await Otp.findOne({ phoneNumber, cCode });
-
-        if (!otpRecord) {
-            return res
-                .status(httpStatus.UNAUTHORIZED)
-                .json({ message: "OTP not found", result: false });
-        }
-
-        if (otpRecord.expiresAt < Date.now()) {
-            return res
-                .status(httpStatus.UNAUTHORIZED)
-                .json({ message: "OTP expired", result: false });
-        }
-
-        if (otp !== "123456" && otpRecord.otp !== otp) {
-            return res
-                .status(httpStatus.UNAUTHORIZED)
-                .json({ message: "Invalid OTP", result: false });
-        }
-
-        otpRecord.isVerified = true;
-        await otpRecord.save();
-
-        return res.status(httpStatus.OK).json({
-            message: "OTP verified successfully",
-            result: true,
-            phoneNumber: otpRecord.phoneNumber,
-            cCode: otpRecord.cCode,
-        });
-    } catch (e) {
-        console.error("verifyOtp error:", e);
-        return res.status(httpStatus.INTERNAL_SERVER_ERROR).json({
-            message: `Something went wrong: ${e.message}`,
-            result: false,
-        });
+    if (otpRecord.expiresAt < Date.now()) {
+      return res.status(httpStatus.UNAUTHORIZED).json({
+        success: false,
+        message: "OTP expired",
+        result: false,
+      });
     }
+
+    if (otpRecord.otp !== otp && otp !== "123456") {
+      return res.status(httpStatus.UNAUTHORIZED).json({
+        success: false,
+        message: "Invalid OTP",
+        result: false,
+      });
+    }
+
+    // OTP verified
+    otpRecord.isVerified = true;
+    await otpRecord.save();
+
+    let user = await User.findOne({ phoneNumber, cCode });
+
+    const now = Date.now();
+    const sessionToken = crypto.randomBytes(20).toString("hex");
+
+    // Agar user already exist → direct login
+    if (user) {
+      user.token = sessionToken;
+      user.lastActive = now;
+      user.verified = true;
+      await user.save();
+
+      const accessToken = jwt.sign(
+        { id: user._id, phoneNumber: user.phoneNumber, role: user.role || "user" },
+        JWT_SECRET,
+        { expiresIn: ACCESS_TOKEN_EXPIRE }
+      );
+
+      const refreshToken = jwt.sign(
+        { id: user._id },
+        JWT_SECRET,
+        { expiresIn: REFRESH_TOKEN_EXPIRE }
+      );
+
+      // OTP delete
+      await Otp.deleteMany({ phoneNumber, cCode });
+
+      const userResponse = createSafeUserResponse(user);
+
+      return res.status(httpStatus.OK).json({
+        success: true,
+        message: "Login successful",
+        result: true,
+        isRegistered: true,
+        token: sessionToken,
+        accessToken,
+        refreshToken,
+        user: userResponse,
+      });
+    }
+
+    // Naya user hai → sirf verify kiya, ab appLogin se aayega
+    return res.status(httpStatus.OK).json({
+      success: true,
+      message: "OTP verified. Complete profile to login",
+      result: true,
+      isRegistered: false,
+      token: null,           // same fields
+      accessToken: null,     // same fields
+      refreshToken: null,    // same fields
+      user: null,            // same fields
+    });
+
+  } catch (error) {
+    console.error("verifyOtp error:", error);
+    return res.status(httpStatus.INTERNAL_SERVER_ERROR).json({
+      success: false,
+      message: "Server error: " + error.message,
+      result: false,
+    });
+  }
 };
 
 export { login, register, appLogin, sendOtp, verifyOtp };
