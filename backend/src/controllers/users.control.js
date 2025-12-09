@@ -344,7 +344,7 @@ export const blockUser = async (req, res) => {
   }
 
   try {
-    const user = await User.findById(id).lean();
+    const user = await User.findById(id);
 
     if (!user) {
       return res.status(httpStatus.NOT_FOUND).json({
@@ -362,12 +362,13 @@ export const blockUser = async (req, res) => {
       phoneNumber: user.phoneNumber,
     });
 
-    // Remove user from User collection
-    await User.findByIdAndDelete(id);
+    //  Mark user as blocked
+    user.status = "blocked";
+    await user.save();
 
     return res.status(httpStatus.OK).json({
       success: true,
-      message: "User blocked and removed from active users successfully",
+      message: "User blocked successfully",
     });
   } catch (error) {
     console.error("Error blocking user:", error);
