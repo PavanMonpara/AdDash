@@ -215,7 +215,7 @@ export const updateListener = async (req, res) => {
 
     const updateData = req.body;
 
-    // Allowed fields for Listener
+    // === 1. Update Listener Document Fields ===
     const allowedListenerFields = [
       "expertise",
       "experience",
@@ -226,38 +226,62 @@ export const updateListener = async (req, res) => {
       "status",
     ];
 
-    // Update Listener fields
     allowedListenerFields.forEach((field) => {
       if (updateData[field] !== undefined) {
         listener[field] = updateData[field];
       }
     });
 
-    
-    if (req.file) {
-      const profilePicUrl = `/uploads/profiles/${req.file.filename}`;
-      // Ya agar Cloudinary use kar raha hai toh: req.file.path (cloudinary URL)
+    // === 2. Update User Document Fields (username, alias, about, age, gender, lang) ===
+    const allowedUserFields = {
+      username: String,
+      alias: String,
+      about: String,
+      age: Number,
+      gender: (val) => ["male", "female", "other"].includes(val),
+      lang: String,
+    };
 
-      // Save photo URL in User model
-      await User.findByIdAndUpdate(listener.userId, {
-        profilePic: profilePicUrl
-      });
+    const userUpdate = {};
+    Object.keys(allowedUserFields).forEach((field) => {
+      if (updateData[field] !== undefined) {
+        if (typeof allowedUserFields[field] === "function") {
+          if (allowedUserFields[field](updateData[field])) {
+            userUpdate[field] = updateData[field];
+          }
+        } else {
+          userUpdate[field] = updateData[field];
+        }
+      }
+    });
+
+    if (Object.keys(userUpdate).length > 0) {
+      await User.findByIdAndUpdate(listener.userId, userUpdate);
     }
 
-    // Update status → change user role
+    // === 3. Handle Profile Picture Upload ===
+    if (req.file) {
+      const profilePicUrl = `/uploads/profiles/${req.file.filename}`;
+      // If using Cloudinary: const profilePicUrl = req.file.path;
+
+      await User.findByIdAndUpdate(listener.userId, { profilePic: profilePicUrl });
+    }
+
+    // === 4. Update Role if Status Changes ===
     if (updateData.status) {
-      await User.findByIdAndUpdate(listener.userId, {
-        role: updateData.status === "approved" ? "listener" : "user"
-      });
+      const newRole = updateData.status === "approved" ? "listener" : "user";
+      await User.findByIdAndUpdate(listener.userId, { role: newRole });
     }
 
     await listener.save();
 
-    // Populate user with latest profilePic
+    // === 5. Final Response with Fresh Data ===
     const updatedListener = await Listener.findById(id).populate({
       path: "userId",
-      select: "username alias phoneNumber gender lang about profilePic"
+      select: "username alias phoneNumber gender lang about profilePic age"
     });
+
+    const user = updatedListener.userId;
 
     res.status(200).json({
       success: true,
@@ -265,15 +289,26 @@ export const updateListener = async (req, res) => {
       listener: {
         ...updatedListener.toObject(),
         user: {
-          ...updatedListener.userId.toObject(),
-          profilePic: updatedListener.userId.profilePic || null
-        }
+          username: user.username,
+          alias: user.alias || user.username,
+          gender: user.gender,
+          lang: user.lang,
+          about: user.about || "",
+          age: user.age || null,
+          phoneNumber: user.phoneNumber,
+          profilePic: user.profilePic || null,
+        },
+        userId: undefined, // hide userId
       }
     });
 
   } catch (error) {
     console.error("updateListener error:", error);
-    res.status(500).json({ success: false, message: "Server error", error: error.message });
+    res.status(500).json({ 
+      success: false, 
+      message: "Server error", 
+      error: error.message 
+    });
   }
 };
 

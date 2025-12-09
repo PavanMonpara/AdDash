@@ -10,6 +10,9 @@ import chat from "./chatApi.js";
 import call from "./callApi.js";
 import roles from "./rolesApi.js";
 import faqsApi from "./faqsApi.js";
+import category from "./category.js";
+import complaint from "./complaint.js";
+
 
 const router = Router();
 
@@ -35,5 +38,9 @@ router.use("/calls", call);
 router.use("/roles", roles);
 
 router.use("/faqs", faqsApi);
+
+router.use("/categories", category);
+
+router.use("/complaints", complaint);
 
 export default router;

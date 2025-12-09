@@ -27,6 +27,7 @@ const userScheme = new Schema({
  tickets: [{ type: Schema.Types.ObjectId, ref: "SupportTicket" }],
  lang: { type: String },
  gender: { type: String, enum: ["male", "female", "other"] },
+ age: { type: Number, min: 18, max: 100 },
  myReferralCode: { type: String, unique: true, sparse: true },
  referredBy: { type: Schema.Types.ObjectId, ref: "User", default: null },
  referredUsers: [{ type: Schema.Types.ObjectId, ref: "User" }],
