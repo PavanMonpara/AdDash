@@ -82,6 +82,59 @@ export const getAllUsers = async (req, res) => {
   }
 };
 
+
+export const getNormalUsersOnly = async (req, res) => {
+  try {
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 20;
+    const skip = (page - 1) * limit;
+    const search = req.query.search?.trim();
+
+    // Sirf normal users
+    const filter = { role: "user" };
+
+    // Search by username, phone, alias
+    if (search) {
+      const phoneSearch = search.replace(/\D/g, ""); // only digits
+      filter.$or = [
+        { username: { $regex: search, $options: "i" } },
+        { alias: { $regex: search, $options: "i" } },
+        { phoneNumber: { $regex: search, $options: "i" } },
+        { phoneNumber: { $regex: phoneSearch, $options: "i" } },
+      ];
+    }
+
+    const users = await User.find(filter)
+      .select("-password -token -__v -sessions -tickets") // sensitive + heavy fields hata diye
+      .sort({ registered: -1 })
+      .skip(skip)
+      .limit(limit)
+      .lean();
+
+    const total = await User.countDocuments(filter);
+
+    // Direct DB se aaya data — no manual mapping!
+    // Saare fields as-it-is: email, cCode, phoneNumber, gender, lang, profilePic, etc.
+    res.status(200).json({
+      success: true,
+      message: "Normal users fetched successfully",
+      count: users.length,
+      total,
+      page,
+      totalPages: Math.ceil(total / limit),
+      users, // pura user object — no change, no extra logic
+    });
+
+  } catch (error) {
+    console.error("getNormalUsersOnly error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Server error",
+      error: error.message,
+    });
+  }
+};
+
 // GET SINGLE USER BY ID
 export const getUserById = async (req, res) => {
   const { id } = req.params;
