@@ -5,6 +5,7 @@ import {
   getUserById,
   updateUser,
   deleteUser,
+  blockUser,
   getNormalUsersOnly,
 } from "../controllers/users.control.js";
 import { verifyToken } from "../middlewares/verifyToken.js";
@@ -18,7 +19,7 @@ user.get("/", verifyToken, isSuperAdmin, getAllUsers);
 user.get("/:id", verifyToken, isSuperAdmin, getUserById);
 user.put("/:id", verifyToken, isSuperAdmin, updateUser);
 user.delete("/:id", verifyToken, isSuperAdmin, deleteUser);
-
+user.post("/block/:id", verifyToken, isSuperAdmin, blockUser);
 user.get("/normal/all", verifyToken,isAuthenticated, getNormalUsersOnly);
 
 export default user;
