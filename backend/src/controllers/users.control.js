@@ -7,24 +7,30 @@ import bcrypt from "bcrypt";
 import mongoose from "mongoose";
 
 // Safe response banao taaki password, token kabhi na jaaye
-const createSafeUserResponse = (userDoc, sessions = [], tickets = []) => {
+const createSafeUserResponse = (userDoc) => {
+  // Agar user null hai toh null return kar do
+  if (!userDoc) return null;
+
+  // Yeh zaroori hai kyunki populated documents mein _id undefined ho sakta hai
+  const userId = userDoc._id ? userDoc._id.toString() : userDoc.id || null;
+
   return {
-    _id: userDoc._id,
-    userId: userDoc.username,
-    alias: userDoc.alias || "",
-    contact: {
-      email: userDoc.email,
-      phone: `${userDoc.cCode || ""} ${userDoc.phoneNumber || ""}`.trim(),
-    },
-    role: userDoc.role,
-    status: userDoc.status,
-    wallet: 0.0,
-    sessions: sessions.length || 0,
-    tickets: tickets.length || 0,
-    registered: userDoc.registered,
+    userid: userId,                                    // ← YEH AB HAMESHA AAYEGA
+    username: userDoc.username || userDoc.phoneNumber || "User",
+    role: userDoc.role || "user",
+    cCode: userDoc.cCode,
+    phoneNumber: userDoc.phoneNumber,
+    status: userDoc.status || "active",
     lastActive: userDoc.lastActive,
-    sessionDetails: sessions,
-    ticketDetails: tickets,
+    registered: userDoc.registered,
+    sessions: userDoc.sessions || [],
+    tickets: userDoc.tickets || [],
+    verified: !!userDoc.verified,
+    lang: userDoc.lang,
+    gender: userDoc.gender,
+    age: userDoc.age || null,
+    profilePic: userDoc.profilePic || null,
+    alias: userDoc.alias || null,
   };
 };
 

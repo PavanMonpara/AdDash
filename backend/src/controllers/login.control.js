@@ -19,6 +19,7 @@ if (!JWT_SECRET) {
 
 const createSafeUserResponse = (userDoc) => {
     return {
+        userid : userDoc._id,
         username: userDoc.username,
         role: userDoc.role,
         cCode: userDoc.cCode,
