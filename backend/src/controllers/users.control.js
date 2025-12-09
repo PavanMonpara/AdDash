@@ -1,7 +1,6 @@
-// src/controllers/users.control.js
-
 import { User } from "../models/model.login.js";
 import { Session } from "../models/model.session.js";
+import { BlockedUser } from "../models/model.blockedUser.js";
 import httpStatus from "http-status";
 import bcrypt from "bcrypt";
 import mongoose from "mongoose";
@@ -275,6 +274,53 @@ export const deleteUser = async (req, res) => {
     return res.status(httpStatus.INTERNAL_SERVER_ERROR).json({
       success: false,
       message: "Delete failed",
+      error: error.message,
+    });
+  }
+};
+
+// BLOCK USER: Save to BlockedUser collection then delete from User collection
+export const blockUser = async (req, res) => {
+  const { id } = req.params;
+
+  if (!mongoose.Types.ObjectId.isValid(id)) {
+    return res.status(httpStatus.BAD_REQUEST).json({
+      success: false,
+      message: "Invalid user ID",
+    });
+  }
+
+  try {
+    const user = await User.findById(id).lean();
+
+    if (!user) {
+      return res.status(httpStatus.NOT_FOUND).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+
+    // Save basic info in BlockedUser collection
+    await BlockedUser.create({
+      userId: user._id,
+      email: user.email,
+      username: user.username,
+      cCode: user.cCode,
+      phoneNumber: user.phoneNumber,
+    });
+
+    // Remove user from User collection
+    await User.findByIdAndDelete(id);
+
+    return res.status(httpStatus.OK).json({
+      success: true,
+      message: "User blocked and removed from active users successfully",
+    });
+  } catch (error) {
+    console.error("Error blocking user:", error);
+    return res.status(httpStatus.INTERNAL_SERVER_ERROR).json({
+      success: false,
+      message: "Block user failed",
       error: error.message,
     });
   }

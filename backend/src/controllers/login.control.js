@@ -5,6 +5,8 @@ import crypto from "crypto";
 import Otp from "../models/model.otp.js";
 import jwt from "jsonwebtoken";
 import dotenv from "dotenv";
+import { BlockedUser } from "../models/model.blockedUser.js";
+import { SuspendedListener } from "../models/model.suspendedListener.js";
 dotenv.config();
 
 const JWT_SECRET = process.env.JWT_SECRET;
@@ -181,6 +183,22 @@ const appLogin = async (req, res) => {
   }
 
   try {
+    const blockedByPhone = await BlockedUser.findOne({ cCode, phoneNumber });
+    if (blockedByPhone) {
+      return res.status(httpStatus.FORBIDDEN).json({
+        message: "Blocked user cannot login",
+        result: false,
+      });
+    }
+
+    const suspendedListener = await SuspendedListener.findOne({ cCode, phoneNumber });
+    if (suspendedListener) {
+      return res.status(httpStatus.FORBIDDEN).json({
+        message: "Suspended listener cannot login",
+        result: false,
+      });
+    }
+
     const otpRecord = await Otp.findOne({ phoneNumber, cCode });
 
     if (!otpRecord || !otpRecord.isVerified || otpRecord.expiresAt < Date.now()) {
@@ -241,7 +259,7 @@ const appLogin = async (req, res) => {
       const myReferralCode = generateReferralCode();
 
       user = new User({
-        username: phoneNumber,
+        username: `user_${phoneNumber}`,
         cCode,
         phoneNumber,
         token: sessionToken,

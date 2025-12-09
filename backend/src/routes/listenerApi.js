@@ -7,6 +7,7 @@ import {
   removeListener,
   updateListener,
   getAvailableListeners, // ye naya wala hai
+  suspendListener,
 } from "../controllers/listener.control.js";
 
 import { verifyToken } from "../middlewares/verifyToken.js";
@@ -18,7 +19,7 @@ const listener = Router();
 
 // SuperAdmin only
 listener.post("/promote", verifyToken, isSuperAdmin, promoteToListener);
-
+listener.post("/suspend/:id", verifyToken, isSuperAdmin, suspendListener);
 
 listener.put("/:id", 
   verifyToken,

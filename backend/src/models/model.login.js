@@ -12,10 +12,10 @@ const userScheme = new Schema({
    default: "user"
  },
  token: { type: String },
- username: { type: String, unique: true },
+ username: { type: String, unique: true, sparse: true },
  about: { type: String },
  cCode: { type: String, required: true },
- phoneNumber: { type: String, unique: true, required: true },
+ phoneNumber: { type: String, unique: true },
  status: {
    type: String,
    enum: ["active", "inactive", "blocked", "pending"],

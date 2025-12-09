@@ -2,6 +2,7 @@
 import mongoose from "mongoose";
 import Listener from "../models/model.listener.js";
 import { User } from "../models/model.login.js";
+import { SuspendedListener } from "../models/model.suspendedListener.js";
 import path from "path";
 import fs from "fs";
 
@@ -295,5 +296,53 @@ export const removeListener = async (req, res) => {
     });
   } catch (error) {
     res.status(500).json({ error: error.message });
+  }
+};
+
+// SUSPEND LISTENER: save to SuspendedListener and mark status as suspended
+export const suspendListener = async (req, res) => {
+  try {
+    const { id } = req.params; // listener document ID
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ success: false, message: "Invalid listener ID" });
+    }
+
+    const listener = await Listener.findById(id).populate(
+      "userId",
+      "email username cCode phoneNumber"
+    );
+
+    if (!listener) {
+      return res.status(404).json({ success: false, message: "Listener not found" });
+    }
+
+    const user = listener.userId;
+
+    // Save / upsert suspended listener record
+    await SuspendedListener.findOneAndUpdate(
+      { listenerId: listener._id },
+      {
+        userId: user._id,
+        listenerId: listener._id,
+        email: user.email,
+        username: user.username,
+        cCode: user.cCode,
+        phoneNumber: user.phoneNumber,
+      },
+      { upsert: true, new: true }
+    );
+
+    // Mark listener as suspended
+    listener.status = "suspended";
+    await listener.save();
+
+    return res.status(200).json({
+      success: true,
+      message: "Listener suspended successfully",
+    });
+  } catch (error) {
+    console.error("suspendListener error:", error);
+    return res.status(500).json({ success: false, message: "Server error", error: error.message });
   }
 };
