@@ -3,8 +3,6 @@ import mongoose from "mongoose";
 import Listener from "../models/model.listener.js";
 import { User } from "../models/model.login.js";
 import { SuspendedListener } from "../models/model.suspendedListener.js";
-import path from "path";
-import fs from "fs";
 
 export const promoteToListener = async (req, res) => {
   try {
@@ -100,7 +98,7 @@ export const getListenerById = async (req, res) => {
   }
 };
 
-// NEW: For normal users - shows only opposite gender + same language approved listeners
+// FIXED: getAvailableListeners – now age & profilePic are coming correctly
 export const getAvailableListeners = async (req, res) => {
   try {
     const userId = req.user?.id;
@@ -112,7 +110,7 @@ export const getAvailableListeners = async (req, res) => {
     const limit = parseInt(req.query.limit) || 15;
     const skip = (page - 1) * limit;
 
-    // Current user ki gender & lang
+    // Get current user's gender & language
     const currentUser = await User.findById(userId).select("gender lang");
     if (!currentUser || !currentUser.gender || !currentUser.lang) {
       return res.status(400).json({
@@ -129,30 +127,28 @@ export const getAvailableListeners = async (req, res) => {
     else if (seekerGender === "female") allowedGenders = ["male", "other"];
     else allowedGenders = ["male", "female", "other"];
 
-    // Query: Only approved listeners + matching user gender & lang
     const listeners = await Listener.find({ status: "approved" })
       .populate({
         path: "userId",
         match: {
           gender: { $in: allowedGenders },
           lang: seekerLang,
-          status: { $in: ["active"] }, // optional
+          status: "active",
         },
-        select: "username alias gender lang about phoneNumber",
+        // AGE & PROFILEPIC ADDED HERE
+        select:
+          "username alias gender lang about phoneNumber age profilePic",
       })
       .sort({ rating: -1, chargesPerMinute: 1 })
       .skip(skip)
       .limit(limit)
-      .lean(); // important for modification
+      .lean();
 
-    // Filter out non-matching (userId null ho gaya match fail hone pe)
+    // Remove listeners where userId became null due to match failure
     const validListeners = listeners
-      .filter((listener) => listener.userId !== null)
+      .filter((l) => l.userId !== null)
       .map((listener) => ({
-        // SAB KUCH Listener se direct spread kar do – no manual field writing!
         ...listener,
-
-        // Sirf user object ko overwrite karo with clean data
         user: {
           username: listener.userId.username || "Listener",
           alias: listener.userId.alias || listener.userId.username,
@@ -160,10 +156,10 @@ export const getAvailableListeners = async (req, res) => {
           lang: listener.userId.lang,
           about: listener.userId.about || "",
           phoneNumber: listener.userId.phoneNumber,
+          age: listener.userId.age || null,
+          profilePic: listener.userId.profilePic || null,
         },
-
-        // userId field hata do (security + clean response)
-        userId: undefined,
+        userId: undefined, // hide for security
       }));
 
     // Accurate total count
@@ -189,7 +185,6 @@ export const getAvailableListeners = async (req, res) => {
       count: validListeners.length,
       listeners: validListeners,
     });
-
   } catch (error) {
     console.error("getAvailableListeners error:", error);
     return res.status(500).json({
@@ -215,7 +210,7 @@ export const updateListener = async (req, res) => {
 
     const updateData = req.body;
 
-    // === 1. Update Listener Document Fields ===
+    // 1. Update Listener fields
     const allowedListenerFields = [
       "expertise",
       "experience",
@@ -232,7 +227,7 @@ export const updateListener = async (req, res) => {
       }
     });
 
-    // === 2. Update User Document Fields (username, alias, about, age, gender, lang) ===
+    // 2. Update User fields
     const allowedUserFields = {
       username: String,
       alias: String,
@@ -259,15 +254,13 @@ export const updateListener = async (req, res) => {
       await User.findByIdAndUpdate(listener.userId, userUpdate);
     }
 
-    // === 3. Handle Profile Picture Upload ===
+    // 3. Handle profile picture
     if (req.file) {
       const profilePicUrl = `/uploads/profiles/${req.file.filename}`;
-      // If using Cloudinary: const profilePicUrl = req.file.path;
-
       await User.findByIdAndUpdate(listener.userId, { profilePic: profilePicUrl });
     }
 
-    // === 4. Update Role if Status Changes ===
+    // 4. Update role if status changed
     if (updateData.status) {
       const newRole = updateData.status === "approved" ? "listener" : "user";
       await User.findByIdAndUpdate(listener.userId, { role: newRole });
@@ -275,10 +268,10 @@ export const updateListener = async (req, res) => {
 
     await listener.save();
 
-    // === 5. Final Response with Fresh Data ===
+    //  // Final fresh data
     const updatedListener = await Listener.findById(id).populate({
       path: "userId",
-      select: "username alias phoneNumber gender lang about profilePic age"
+      select: "username alias phoneNumber gender lang about profilePic age",
     });
 
     const user = updatedListener.userId;
@@ -298,16 +291,15 @@ export const updateListener = async (req, res) => {
           phoneNumber: user.phoneNumber,
           profilePic: user.profilePic || null,
         },
-        userId: undefined, // hide userId
-      }
+        userId: undefined,
+      },
     });
-
   } catch (error) {
     console.error("updateListener error:", error);
-    res.status(500).json({ 
-      success: false, 
-      message: "Server error", 
-      error: error.message 
+    res.status(500).json({
+      success: false,
+      message: "Server error",
+      error: error.message,
     });
   }
 };
@@ -334,10 +326,9 @@ export const removeListener = async (req, res) => {
   }
 };
 
-// SUSPEND LISTENER: save to SuspendedListener and mark status as suspended
 export const suspendListener = async (req, res) => {
   try {
-    const { id } = req.params; // listener document ID
+    const { id } = req.params;
 
     if (!mongoose.Types.ObjectId.isValid(id)) {
       return res.status(400).json({ success: false, message: "Invalid listener ID" });
@@ -354,7 +345,7 @@ export const suspendListener = async (req, res) => {
 
     const user = listener.userId;
 
-    // Save / upsert suspended listener record
+    // Save to suspended collection
     await SuspendedListener.findOneAndUpdate(
       { listenerId: listener._id },
       {
@@ -368,7 +359,6 @@ export const suspendListener = async (req, res) => {
       { upsert: true, new: true }
     );
 
-    // Mark listener as suspended
     listener.status = "suspended";
     await listener.save();
 
@@ -378,6 +368,10 @@ export const suspendListener = async (req, res) => {
     });
   } catch (error) {
     console.error("suspendListener error:", error);
-    return res.status(500).json({ success: false, message: "Server error", error: error.message });
+    return res.status(500).json({
+      success: false,
+      message: "Server error",
+      error: error.message,
+    });
   }
 };
