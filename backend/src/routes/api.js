@@ -13,6 +13,7 @@ import faqsApi from "./faqsApi.js";
 import category from "./category.js";
 import complaint from "./complaint.js";
 import softDelete from "./softDeleteApi.js";
+import reviewRoutes from "./reviewApi.js";
 
 const router = Router();
 
@@ -45,5 +46,8 @@ router.use("/complaints", complaint);
 
 // Soft delete management routes
 router.use("/manage", softDelete);
+
+// Review routes
+router.use("/reviews", reviewRoutes);
 
 export default router;
