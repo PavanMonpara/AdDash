@@ -156,7 +156,7 @@ export function SessionManagement() {
 
   const userOptions = allUsers.map((user: any) => ({
     value: user._id,
-    label: user.alias || user.username,
+    label: user?.alias || user?.username,
   }));
 
   const finalOptions = [
@@ -204,7 +204,7 @@ export function SessionManagement() {
 
   const listnerOptions = allListner.map((items: any) => ({
     value: items._id,
-    label: items.userId.username,
+    label: items?.userId?.username,
   }));
 
   const finalListnerOptions = [
