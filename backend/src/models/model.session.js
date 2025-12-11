@@ -26,7 +26,7 @@ const sessionSchema = new Schema({
     },
     status: {
         type: String,
-        enum: ["completed", "ongoing", "cancelled", "pending"],
+        enum: ["completed", "ongoing", "cancelled", "pending", "deleted"],
         default: "pending"
     },
     paymentStatus: {
@@ -38,6 +38,30 @@ const sessionSchema = new Schema({
         type: Number,
         required: true,
         default: 0
+    },
+    isDeleted: { 
+        type: Boolean, 
+        default: false 
+    },
+    deletedAt: { 
+        type: Date, 
+        default: null 
+    },
+    deletedBy: {
+        userType: {
+            type: String,
+            enum: ["user", "listener", "admin", null],
+            default: null
+        },
+        userId: {
+            type: Schema.Types.ObjectId,
+            refPath: 'deletedBy.userType',
+            default: null
+        },
+        reason: {
+            type: String,
+            default: null
+        }
     }
 });
 

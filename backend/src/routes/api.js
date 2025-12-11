@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { appLogin, login, register } from "../controllers/login.control.js";
+import { login, register } from "../controllers/login.control.js";
 import session from "./sessionsApi.js";
 import user from "./usersApi.js";
 import listener from "./listenerApi.js";
@@ -12,7 +12,7 @@ import roles from "./rolesApi.js";
 import faqsApi from "./faqsApi.js";
 import category from "./category.js";
 import complaint from "./complaint.js";
-
+import softDelete from "./softDeleteApi.js";
 
 const router = Router();
 
@@ -42,5 +42,8 @@ router.use("/faqs", faqsApi);
 router.use("/categories", category);
 
 router.use("/complaints", complaint);
+
+// Soft delete management routes
+router.use("/manage", softDelete);
 
 export default router;

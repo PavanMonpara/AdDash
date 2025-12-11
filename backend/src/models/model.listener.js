@@ -23,6 +23,8 @@ const listenerSchema = new mongoose.Schema({
   earnings: { type: Number, default: 0 },
   commission: { type: String, default: "20%" },
   sessions: { type: Number, default: 0 },
+  isDeleted: { type: Boolean, default: false },
+  deletedAt: { type: Date, default: null },
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now },
 });
@@ -31,6 +33,7 @@ listenerSchema.pre("save", function (next) {
   this.updatedAt = Date.now();
   next();
 });
+
 
 const Listener = mongoose.model("Listener", listenerSchema);
 export default Listener;
