@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { mockListeners, Listener } from '../lib/mockData';
 import { Card, CardContent, CardHeader } from './ui/card';
 import { Input } from './ui/input';
@@ -9,7 +9,7 @@ import { Label } from './ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
 import { Search, CheckCircle, XCircle, Ban, DollarSign, Eye, ChevronLeft, ChevronRight } from 'lucide-react';
-import { toast } from 'sonner@2.0.3';
+import { toast } from 'sonner';
 
 export const ListenerManagement: React.FC = () => {
   const [listeners, setListeners] = useState<Listener[]>(mockListeners);
@@ -152,8 +152,8 @@ export const ListenerManagement: React.FC = () => {
                         listener.verificationStatus === 'approved'
                           ? 'bg-green-100 text-green-800'
                           : listener.verificationStatus === 'pending'
-                          ? 'bg-yellow-100 text-yellow-800'
-                          : 'bg-red-100 text-red-800'
+                            ? 'bg-yellow-100 text-yellow-800'
+                            : 'bg-red-100 text-red-800'
                       }
                     >
                       {listener.verificationStatus}

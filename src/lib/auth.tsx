@@ -1,10 +1,12 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import type { Admin, Role } from './types';
 import { mockAdmins } from './mockData';
+import { granularRolePermissions } from './permissions';
+
 
 interface AuthContextType {
   admin: Admin | null;
-  login: (email: string, password: string, twoFactorCode?: string) => Promise<boolean>;
+  login: (data: any, token: string, refreshToken: string) => Promise<boolean>;
   logout: () => void;
   hasPermission: (permission: string) => boolean;
   isSessionActive: boolean;
@@ -15,7 +17,16 @@ const AuthContext = createContext<AuthContextType | null>(null);
 const SESSION_TIMEOUT = 30 * 60 * 1000; // 30 minutes
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [admin, setAdmin] = useState<Admin | null>(null);
+  const [admin, setAdmin] = useState<Admin | null>({
+    id: 'admin-1',
+    email: 'superadmin@example.com',
+    name: 'John Doe',
+    role: 'SuperAdmin',
+    createdAt: '2024-01-01T00:00:00Z',
+    lastLogin: '2025-10-26T10:00:00Z',
+    twoFactorEnabled: true,
+    permissions: ['*']
+  },);
   const [lastActivity, setLastActivity] = useState<number>(Date.now());
   const [isSessionActive, setIsSessionActive] = useState(true);
 
@@ -55,42 +66,45 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
-  const login = async (email: string, password: string, twoFactorCode?: string): Promise<boolean> => {
+  const login = async (data: any, token: string, refreshToken: string): Promise<boolean> => {
     // Mock authentication
-    const foundAdmin = mockAdmins.find(a => a.email === email);
-    
-    if (!foundAdmin) {
-      return false;
-    }
+    // const foundAdmin = mockAdmins.find(a => a.email === email);
 
-    // Simulate password check (in production, this would be verified on backend)
-    if (password !== 'admin123') {
-      return false;
-    }
+    // if (!foundAdmin) {
+    //   return false;
+    // }
 
-    // Check 2FA if enabled
-    if (foundAdmin.twoFactorEnabled && !twoFactorCode) {
-      return false; // Need 2FA code
-    }
+    // // Simulate password check (in production, this would be verified on backend)
+    // if (password !== 'admin123') {
+    //   return false;
+    // }
 
-    if (foundAdmin.twoFactorEnabled && twoFactorCode !== '123456') {
-      return false; // Invalid 2FA code
-    }
+    // // Check 2FA if enabled
+    // if (foundAdmin.twoFactorEnabled && !twoFactorCode) {
+    //   return false; // Need 2FA code
+    // }
 
-    // Mock JWT token storage
-    const mockToken = btoa(JSON.stringify({ 
-      adminId: foundAdmin.id, 
-      role: foundAdmin.role,
-      exp: Date.now() + 24 * 60 * 60 * 1000 
-    }));
-    
-    localStorage.setItem('authToken', mockToken);
-    localStorage.setItem('refreshToken', 'mock-refresh-token');
-    
-    setAdmin({ ...foundAdmin, lastLogin: new Date().toISOString() });
+    // if (foundAdmin.twoFactorEnabled && twoFactorCode !== '123456') {
+    //   return false; // Invalid 2FA code
+    // }
+
+    // // Mock JWT token storage
+    // const mockToken = btoa(JSON.stringify({ 
+    //   adminId: foundAdmin.id, 
+    //   role: foundAdmin.role,
+    //   exp: Date.now() + 24 * 60 * 60 * 1000 
+    // }));
+
+    localStorage.setItem('authToken', token);
+    localStorage.setItem('refreshToken', refreshToken);
+
+    setAdmin({
+      ...data, name: data.username, permissions: ['*']
+      , lastLogin: new Date().toISOString()
+    });
     setLastActivity(Date.now());
     setIsSessionActive(true);
-    
+
     return true;
   };
 
@@ -123,10 +137,10 @@ export function useAuth() {
 }
 
 // Route guard component
-export function RequireAuth({ 
-  children, 
-  requiredPermission 
-}: { 
+export function RequireAuth({
+  children,
+  requiredPermission
+}: {
   children: React.ReactNode;
   requiredPermission?: string;
 }) {

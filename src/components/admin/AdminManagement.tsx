@@ -9,7 +9,7 @@ import { Label } from '../ui/label';
 import { UserPlus, Shield, Edit, Trash2 } from 'lucide-react';
 import { mockAdmins, mockAuditLogs } from '../../lib/mockData';
 import { formatDateTime } from '../../lib/utils';
-import { toast } from 'sonner@2.0.3';
+import { toast } from 'sonner';
 import type { Admin, Role } from '../../lib/types';
 
 export function AdminManagement() {

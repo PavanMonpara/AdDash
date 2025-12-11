@@ -4,9 +4,11 @@ export type Role = 'SuperAdmin' | 'Support' | 'Finance' | 'Compliance';
 
 // Custom roles with granular permissions
 export interface CustomRole {
-  id: string;
-  name: string;
+  _id: string;
+  roleName?: string;
   description: string;
+  type?: string
+  name:string
   isSystem: boolean; // true for predefined roles (SuperAdmin, Support, etc.)
   permissions: RolePermissions;
   createdAt: string;
@@ -87,21 +89,38 @@ export interface Admin {
   permissions: string[];
 }
 
-export interface User {
-  id: string;
-  alias: string;
-  email: string;
-  phone: string;
-  status: UserStatus;
-  wallet: number;
-  registrationDate: string;
-  lastActive: string;
-  totalSessions: number;
-  totalSpent: number;
+export interface UserSessionDetails {
+  _id: string;
+  user: string;
+  listener: string;
+  type: string;
+  status: string;
+  startTime: string;
 }
 
+export interface User {
+  _id: string;
+  userId: string;
+  alias: string;
+  contact: {
+    email: string;
+    phone: string;
+  };
+  status: string;
+  wallet: number;
+  registered: string;
+  lastActive?: string;
+  sessions: number;
+  totalSpent?: number;
+  role: string;
+  tickets: number;
+  ticketDetails: any[];
+  sessionDetails: UserSessionDetails[];
+}
+
+
 export interface Listener {
-  id: string;
+  _id: string;
   name: string;
   email: string;
   expertiseTags: string[];
@@ -116,7 +135,7 @@ export interface Listener {
 }
 
 export interface Session {
-  id: string;
+  _id: string;
   userAlias: string;
   userId: string;
   listenerName: string;

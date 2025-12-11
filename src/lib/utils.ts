@@ -45,13 +45,18 @@ export function formatRelativeTime(date: string): string {
   return formatDate(date);
 }
 
+export const formatDateTimeLocal = (value: string) => {
+  if (!value) return "";
+  return value.slice(0, 16); // "2025-11-10T14:30"
+};
+
 export function exportToCSV(data: any[], filename: string) {
   if (data.length === 0) return;
 
   const headers = Object.keys(data[0]);
   const csvContent = [
     headers.join(','),
-    ...data.map(row => 
+    ...data.map(row =>
       headers.map(header => {
         const value = row[header];
         // Escape commas and quotes

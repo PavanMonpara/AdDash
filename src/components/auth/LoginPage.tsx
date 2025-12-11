@@ -6,10 +6,12 @@ import { Label } from '../ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
 import { Checkbox } from '../ui/checkbox';
 import { Shield, Lock, Mail } from 'lucide-react';
-import { toast } from 'sonner@2.0.3';
+import { toast } from 'sonner';
+import { useMutation } from '@tanstack/react-query';
+import { LoginAPI } from '../../api';
 
 export function LoginPage() {
-  const { login } = useAuth();
+  const { login, } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [twoFactorCode, setTwoFactorCode] = useState('');
@@ -17,36 +19,57 @@ export function LoginPage() {
   const [rememberMe, setRememberMe] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
 
+  const { mutate } = useMutation({
+    mutationKey: ["Login-api"],
+    mutationFn: LoginAPI,
+    onSuccess: (res) => {
+      login(res.data.user, res.data.token, res.data.refreshToken);
+      setIsLoading(false);
+      console.log(res.data, '>>>>>>>>>>>>>>>>');
+      toast(res.data.message || "Login success!")
+      toast.success('Login Successful', {
+        description: res.data.message
+      });
+    },
+    onError: (error: any) => {
+      setIsLoading(false);
+      toast.error('Login Failed', {
+        description: error?.response?.data?.message
+      });
+    }
+  })
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
+    mutate({ email, password })
 
-    try {
-      const success = await login(email, password, showTwoFactor ? twoFactorCode : undefined);
-      
-      if (!success) {
-        if (!showTwoFactor && (email === 'superadmin@example.com' || email === 'finance@example.com' || email === 'compliance@example.com')) {
-          setShowTwoFactor(true);
-          toast.info('2FA Required', {
-            description: 'Please enter your 2FA code (use 123456 for demo)'
-          });
-        } else {
-          toast.error('Login Failed', {
-            description: 'Invalid credentials. Try: superadmin@example.com / admin123'
-          });
-        }
-      } else {
-        toast.success('Login Successful', {
-          description: 'Welcome back to the admin panel'
-        });
-      }
-    } catch (error) {
-      toast.error('Error', {
-        description: 'An error occurred during login'
-      });
-    } finally {
-      setIsLoading(false);
-    }
+    // try {
+    //   const success = await login(email, password, showTwoFactor ? twoFactorCode : undefined);
+
+    //   if (!success) {
+    //     if (!showTwoFactor && (email === 'superadmin@example.com' || email === 'finance@example.com' || email === 'compliance@example.com')) {
+    //       setShowTwoFactor(true);
+    //       toast.info('2FA Required', {
+    //         description: 'Please enter your 2FA code (use 123456 for demo)'
+    //       });
+    //     } else {
+    //       toast.error('Login Failed', {
+    //         description: 'Invalid credentials. Try: superadmin@example.com / admin123'
+    //       });
+    //     }
+    //   } else {
+    //     toast.success('Login Successful', {
+    //       description: 'Welcome back to the admin panel'
+    //     });
+    //   }
+    // } catch (error) {
+    //   toast.error('Error', {
+    //     description: 'An error occurred during login'
+    //   });
+    // } finally {
+    //   setIsLoading(false);
+    // }
   };
 
   return (
