@@ -14,11 +14,14 @@ import category from "./category.js";
 import complaint from "./complaint.js";
 import softDelete from "./softDeleteApi.js";
 import reviewRoutes from "./reviewApi.js";
+import dashboard from "./dashboardApi.js";
 
 const router = Router();
 
 router.route("/register").post(register);
 router.route("/login").post(login);
+
+router.use("/dashboard", dashboard);
 
 router.use("/sessions", session);
 

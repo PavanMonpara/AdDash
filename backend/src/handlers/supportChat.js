@@ -1,256 +1,320 @@
+import dotenv from "dotenv";
+import jwt from "jsonwebtoken";
+
 import ChatMessage from "../models/model.chatMessage.js";
 import SupportTicket from "../models/model.supportTicket.js";
 import { User } from "../models/model.login.js";
 import { BlockedUser } from "../models/model.blockedUser.js";
 import { SuspendedListener } from "../models/model.suspendedListener.js";
-import jwt from 'jsonwebtoken';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
+dotenv.config();
+
+const JWT_SECRET = process.env.JWT_SECRET;
+
+const isSupportStaff = (user) => {
+  const role = user?.role;
+  const roles = Array.isArray(user?.roles) ? user.roles : [];
+
+  return (
+    role === "support" ||
+    role === "superAdmin" ||
+    roles.includes("support") ||
+    roles.includes("superAdmin")
+  );
+};
 
 export default function supportChatHandler(io) {
-    const onlineAgents = new Set();
-    const userRooms = new Map();
-    const socketToUser = new Map();
+  const onlineAgents = new Set();
+  const userRooms = new Map(); // userId -> roomId
+  const socketToUser = new Map(); // userId -> socketId
 
-    // Authentication middleware for WebSocket
-    const authenticateSocket = async (socket, next) => {
-        try {
-            const token = socket.handshake.auth?.token?.split(' ')[1];
-            if (!token) {
-                throw new Error('No token provided');
-            }
-            const decoded = jwt.verify(token, JWT_SECRET);
+  const authenticateSocket = async (socket, next) => {
+    try {
+      const authHeader = socket.handshake.auth?.token || socket.handshake.headers?.authorization;
+      const token = typeof authHeader === "string" && authHeader.startsWith("Bearer ")
+        ? authHeader.split(" ")[1]
+        : authHeader;
 
-            const dbUser = await User.findById(decoded.id).select("email username cCode phoneNumber role");
-            if (!dbUser) {
-                throw new Error('User not found');
-            }
+      if (!token) {
+        throw new Error("No token provided");
+      }
 
-            const blocked = await BlockedUser.findOne({
-                $or: [
-                    { email: dbUser.email },
-                    { username: dbUser.username },
-                    { cCode: dbUser.cCode, phoneNumber: dbUser.phoneNumber },
-                ],
-            });
-            if (blocked) {
-                throw new Error('Blocked user cannot use support chat');
-            }
+      if (!JWT_SECRET) {
+        throw new Error("JWT_SECRET is missing in .env");
+      }
 
-            const suspended = await SuspendedListener.findOne({
-                cCode: dbUser.cCode,
-                phoneNumber: dbUser.phoneNumber,
-            });
-            if (suspended) {
-                throw new Error('Suspended listener cannot use support chat');
-            }
+      const decoded = jwt.verify(token, JWT_SECRET);
 
-            socket.user = decoded;
-            next();
-        } catch (error) {
-            console.error('Socket auth error:', error.message);
-            next(new Error('Authentication failed'));
+      const dbUser = await User.findById(decoded.id).select(
+        "email username cCode phoneNumber role roles"
+      );
+
+      if (!dbUser) {
+        throw new Error("User not found");
+      }
+
+      const blocked = await BlockedUser.findOne({
+        $or: [
+          { userId: dbUser._id },
+          { email: dbUser.email },
+          { username: dbUser.username },
+          { cCode: dbUser.cCode, phoneNumber: dbUser.phoneNumber },
+        ],
+      });
+
+      if (blocked) {
+        throw new Error("Blocked user cannot use support chat");
+      }
+
+      const suspended = await SuspendedListener.findOne({
+        $or: [
+          { userId: dbUser._id },
+          { cCode: dbUser.cCode, phoneNumber: dbUser.phoneNumber },
+        ],
+      });
+
+      if (suspended) {
+        throw new Error("Suspended listener cannot use support chat");
+      }
+
+      // Keep decoded + DB role info available on socket
+      socket.user = {
+        ...decoded,
+        role: dbUser.role,
+        roles: dbUser.roles || [],
+        username: dbUser.username,
+      };
+
+      next();
+    } catch (error) {
+      console.error("Socket auth error:", error?.message || error);
+      next(new Error("Authentication failed"));
+    }
+  };
+
+  io.use(authenticateSocket).on("connection", (socket) => {
+    const userId = socket.user?.id;
+
+    console.log("Client connected:", userId);
+
+    if (userId) {
+      socketToUser.set(userId, socket.id);
+
+      if (isSupportStaff(socket.user)) {
+        onlineAgents.add(userId);
+        io.emit("agentStatus", {
+          agentId: userId,
+          status: "online",
+          timestamp: new Date(),
+        });
+      }
+    }
+
+    socket.on("userJoin", async ({ userId: joinUserId }) => {
+      try {
+        if (!joinUserId) throw new Error("userId is required");
+
+        // A normal user can only join their own room. Support staff can join any.
+        if (socket.user.id !== joinUserId && !isSupportStaff(socket.user)) {
+          throw new Error("Unauthorized access");
         }
-    };
 
-    io.use(authenticateSocket).on("connection", (socket) => {
-        console.log('Client connected:', socket.user.id);
-        socketToUser.set(socket.user.id, socket.id);
+        const roomId = `support_${joinUserId}`;
+        await socket.join(roomId);
 
-        socket.on("userJoin", async ({ userId }) => {
-            try {
-                if (socket.user.id !== userId && !['admin', 'support'].includes(socket.user.role)) {
-                    throw new Error('Unauthorized access');
-                }
+        userRooms.set(joinUserId, roomId);
 
-                const roomId = `support_${userId}`;
-                await socket.join(roomId);
-                userRooms.set(userId, roomId);
-                
-                io.to(roomId).emit("systemMessage", {
-                    text: "Support will join shortly.",
-                    sender: "system",
-                    timestamp: new Date()
-                });
-            } catch (error) {
-                console.error('User join error:', error);
-                socket.emit('error', { message: error.message || 'Failed to join chat' });
-            }
+        io.to(roomId).emit("systemMessage", {
+          text: "Support will join shortly.",
+          sender: "system",
+          timestamp: new Date(),
         });
-
-        socket.on("agentJoin", async ({ agentId, userId }) => {
-            try {
-                if (!['admin', 'support'].includes(socket.user.role)) {
-                    throw new Error('Admin/support role required');
-                }
-
-                const roomId = userRooms.get(userId);
-                if (!roomId) {
-                    throw new Error('User room not found');
-                }
-
-                await socket.join(roomId);
-                onlineAgents.add(agentId);
-                
-                io.to(roomId).emit("systemMessage", {
-                    text: `Agent ${socket.user.username || agentId} joined the chat.`,
-                    sender: "system",
-                    timestamp: new Date()
-                });
-            } catch (error) {
-                console.error('Agent join error:', error);
-                socket.emit('error', { message: error.message || 'Failed to join as agent' });
-            }
-        });
-
-        socket.on("sendMessage", async ({ sessionId, sender, receiver, message }) => {
-            try {
-                if (socket.user.id !== sender && socket.user.id !== receiver && 
-                    !['admin', 'support'].includes(socket.user.role)) {
-                    throw new Error('Unauthorized to send message');
-                }
-
-                const msgData = {
-                    session: sessionId,
-                    sender,
-                    receiver,
-                    message,
-                    timestamp: new Date()
-                };
-
-                const savedMessage = await ChatMessage.create(msgData);
-                const roomId = userRooms.get(receiver) || userRooms.get(sender);
-                
-                if (roomId) {
-                    io.to(roomId).emit("receiveMessage", {
-                        id: savedMessage._id,
-                        sender,
-                        message,
-                        timestamp: savedMessage.timestamp
-                    });
-                }
-            } catch (error) {
-                console.error('Message send error:', error);
-                socket.emit('error', { message: 'Failed to send message' });
-            }
-        });
-
-        socket.on("typing", ({ userId, sender }) => {
-            try {
-                const roomId = userRooms.get(userId);
-                if (roomId) {
-                    socket.to(roomId).emit("typing", { 
-                        sender,
-                        timestamp: new Date()
-                    });
-                }
-            } catch (error) {
-                console.error('Typing indicator error:', error);
-            }
-        });
-
-        socket.on("agentOnline", (agentId) => {
-            if (['admin', 'support'].includes(socket.user.role)) {
-                onlineAgents.add(agentId);
-                io.emit("agentStatus", { 
-                    agentId, 
-                    status: "online",
-                    timestamp: new Date()
-                });
-            }
-        });
-
-        socket.on("agentOffline", (agentId) => {
-            if (['admin', 'support'].includes(socket.user.role)) {
-                onlineAgents.delete(agentId);
-                io.emit("agentStatus", { 
-                    agentId, 
-                    status: "offline",
-                    timestamp: new Date()
-                });
-            }
-        });
-
-        socket.on("adminJoinGlobal", ({ adminId }) => {
-            if (['admin', 'support'].includes(socket.user.role)) {
-                socket.join("admin_global");
-            }
-        });
-
-        socket.on("adminMessage", (msg) => {
-            if (['admin', 'support'].includes(socket.user.role)) {
-                io.to("admin_global").emit("adminMessage", {
-                    ...msg,
-                    sender: socket.user.id,
-                    timestamp: new Date()
-                });
-            }
-        });
-
-        socket.on("leaveChat", ({ userId, sender }) => {
-            const roomId = userRooms.get(userId);
-            if (roomId) {
-                io.to(roomId).emit("chatEnded", {
-                    sender,
-                    reason: "left",
-                    timestamp: new Date()
-                });
-                socket.leave(roomId);
-                userRooms.delete(userId);
-            }
-        });
-
-        socket.on("endChat", async ({ sessionId, userId, adminId }) => {
-            try {
-                if (!['admin', 'support'].includes(socket.user.role)) {
-                    throw new Error('Unauthorized');
-                }
-
-                const roomId = userRooms.get(userId);
-                if (!roomId) return;
-
-                await SupportTicket.create({
-                    user: userId,
-                    subject: "Chat Session Closed",
-                    category: "General",
-                    description: `Chat closed by admin ${adminId}`,
-                    status: "closed",
-                    priority: "low",
-                    assignedTo: adminId,
-                    closedAt: new Date()
-                });
-
-                io.to(roomId).emit("chatEnded", {
-                    reason: "ended",
-                    timestamp: new Date()
-                });
-
-                socket.leave(roomId);
-                userRooms.delete(userId);
-
-            } catch (error) {
-                console.error('Error ending chat:', error);
-                socket.emit('error', { message: 'Failed to end chat' });
-            }
-        });
-
-        socket.on("disconnect", () => {
-            console.log('Client disconnected:', socket.user?.id);
-            if (socket.user?.id) {
-                socketToUser.delete(socket.user.id);
-            }
-            
-            // Clean up any rooms this socket was in
-            userRooms.forEach((roomId, userId) => {
-                if (socket.rooms.has(roomId)) {
-                    io.to(roomId).emit("systemMessage", {
-                        text: "A user has left the chat.",
-                        sender: "system",
-                        timestamp: new Date()
-                    });
-                    socket.leave(roomId);
-                }
-            });
-        });
+      } catch (error) {
+        console.error("User join error:", error);
+        socket.emit("error", { message: error?.message || "Failed to join chat" });
+      }
     });
+
+    socket.on("agentJoin", async ({ userId: targetUserId }) => {
+      try {
+        if (!isSupportStaff(socket.user)) {
+          throw new Error("Support/superAdmin role required");
+        }
+
+        if (!targetUserId) throw new Error("userId is required");
+
+        const roomId = userRooms.get(targetUserId);
+        if (!roomId) {
+          throw new Error("User room not found (user must join first)");
+        }
+
+        await socket.join(roomId);
+        onlineAgents.add(socket.user.id);
+
+        io.to(roomId).emit("systemMessage", {
+          text: `Agent ${socket.user.username || socket.user.id} joined the chat.`,
+          sender: "system",
+          timestamp: new Date(),
+        });
+      } catch (error) {
+        console.error("Agent join error:", error);
+        socket.emit("error", { message: error?.message || "Failed to join as agent" });
+      }
+    });
+
+    socket.on("sendMessage", async ({ sessionId, sender, receiver, message }) => {
+      try {
+        if (!sessionId || !sender || !receiver || !message) {
+          throw new Error("sessionId, sender, receiver, and message are required");
+        }
+
+        // Only allow participants or support staff
+        const isParticipant = socket.user.id === sender || socket.user.id === receiver;
+        if (!isParticipant && !isSupportStaff(socket.user)) {
+          throw new Error("Unauthorized to send message");
+        }
+
+        const msgData = {
+          session: sessionId,
+          sender,
+          receiver,
+          message,
+          timestamp: new Date(),
+        };
+
+        const savedMessage = await ChatMessage.create(msgData);
+
+        const roomId = userRooms.get(receiver) || userRooms.get(sender);
+        if (!roomId) return;
+
+        io.to(roomId).emit("receiveMessage", {
+          id: savedMessage._id,
+          sender,
+          receiver,
+          message,
+          timestamp: savedMessage.timestamp,
+        });
+      } catch (error) {
+        console.error("Message send error:", error);
+        socket.emit("error", { message: error?.message || "Failed to send message" });
+      }
+    });
+
+    socket.on("typing", ({ userId: targetUserId, sender }) => {
+      try {
+        const roomId = userRooms.get(targetUserId);
+        if (!roomId) return;
+
+        socket.to(roomId).emit("typing", {
+          sender,
+          timestamp: new Date(),
+        });
+      } catch (error) {
+        console.error("Typing indicator error:", error);
+      }
+    });
+
+    socket.on("adminJoinGlobal", () => {
+      if (isSupportStaff(socket.user)) {
+        socket.join("admin_global");
+      }
+    });
+
+    socket.on("adminMessage", (msg) => {
+      if (isSupportStaff(socket.user)) {
+        io.to("admin_global").emit("adminMessage", {
+          ...(msg || {}),
+          sender: socket.user.id,
+          timestamp: new Date(),
+        });
+      }
+    });
+
+    socket.on("leaveChat", ({ userId: targetUserId, sender }) => {
+      const roomId = userRooms.get(targetUserId);
+      if (!roomId) return;
+
+      io.to(roomId).emit("chatEnded", {
+        sender,
+        reason: "left",
+        timestamp: new Date(),
+      });
+
+      socket.leave(roomId);
+      userRooms.delete(targetUserId);
+    });
+
+    socket.on("endChat", async ({ sessionId, userId: targetUserId }) => {
+      try {
+        if (!isSupportStaff(socket.user)) {
+          throw new Error("Unauthorized");
+        }
+
+        if (!targetUserId) throw new Error("userId is required");
+
+        const roomId = userRooms.get(targetUserId);
+        if (!roomId) return;
+
+        // Create a ticket record for audit/history
+        await SupportTicket.create({
+          user: targetUserId,
+          subject: "Chat Session Closed",
+          category: "General",
+          description: `Chat session ${sessionId || ""} closed by ${socket.user.id}`.trim(),
+          status: "closed",
+          priority: "low",
+          assignedTo: socket.user.id,
+          messages: [
+            {
+              sender: socket.user.id,
+              message: "Chat closed by support staff",
+              sentAt: new Date(),
+            },
+          ],
+        });
+
+        io.to(roomId).emit("chatEnded", {
+          reason: "ended",
+          timestamp: new Date(),
+        });
+
+        socket.leave(roomId);
+        userRooms.delete(targetUserId);
+      } catch (error) {
+        console.error("Error ending chat:", error);
+        socket.emit("error", { message: error?.message || "Failed to end chat" });
+      }
+    });
+
+    socket.on("disconnect", () => {
+      console.log("Client disconnected:", socket.user?.id);
+
+      if (socket.user?.id) {
+        socketToUser.delete(socket.user.id);
+
+        if (isSupportStaff(socket.user)) {
+          onlineAgents.delete(socket.user.id);
+          io.emit("agentStatus", {
+            agentId: socket.user.id,
+            status: "offline",
+            timestamp: new Date(),
+          });
+        }
+      }
+
+      // If the socket was in any active user room, notify & cleanup
+      userRooms.forEach((roomId, mappedUserId) => {
+        if (socket.rooms.has(roomId)) {
+          io.to(roomId).emit("systemMessage", {
+            text: "A user has left the chat.",
+            sender: "system",
+            timestamp: new Date(),
+          });
+
+          socket.leave(roomId);
+          userRooms.delete(mappedUserId);
+        }
+      });
+    });
+  });
 }

@@ -12,7 +12,7 @@ const listenerSchema = new mongoose.Schema({
   experience: { type: String, required: true },
   aboutMe: { type: String, default: "" },
   myStory: { type: String, default: "" },
-  chargesPerMinute: { type: Number, required: true, min: 0 },
+  chargesPerMinute: { type: Number, required: true, min: 0, default: 10 },
   rating: { type: Number, default: 0 },
   totalRatings: { type: Number, default: 0 },
   status: {

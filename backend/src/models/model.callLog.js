@@ -27,8 +27,9 @@ const callLogSchema = new Schema(
     duration: { type: Number, default: 0 },
     status: {
       type: String,
-      enum: ["completed", "missed", "rejected", "failed"],
-      default: "completed",
+      // realtime flow needs a lifecycle; final states remain the same
+      enum: ["initiated", "ongoing", "completed", "missed", "rejected", "failed"],
+      default: "initiated",
     },
 
     isFlagged: { type: Boolean, default: false },
@@ -36,7 +37,7 @@ const callLogSchema = new Schema(
     flaggedReason: { type: String },
     flaggedAt: { type: Date },
   },
-  
+  { timestamps: true }
 );
 
 callLogSchema.pre(/^find/, function (next) {

@@ -22,6 +22,11 @@ const chatMessageSchema = new Schema(
       required: true,
       trim: true,
     },
+    messageType: {
+      type: String,
+      enum: ["text", "image", "file"],
+      default: "text",
+    },
     readStatus: {
       type: Boolean,
       default: false,
@@ -32,7 +37,7 @@ const chatMessageSchema = new Schema(
     flaggedReason: { type: String },
     flaggedAt: { type: Date },
   },
-  
+  { timestamps: true }
 );
 
 chatMessageSchema.pre(/^find/, function (next) {

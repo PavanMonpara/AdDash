@@ -24,10 +24,30 @@ const sessionSchema = new Schema({
         type: Number,
         default: 0
     },
+    endTime: {
+        type: Date,
+        default: null
+    },
+    endedBy: {
+        userType: {
+            type: String,
+            enum: ["user", "listener", null],
+            default: null
+        },
+        userId: {
+            type: Schema.Types.ObjectId,
+            ref: "User",
+            default: null
+        }
+    },
+    endedReason: {
+        type: String,
+        default: null
+    },
     status: {
         type: String,
-        enum: ["completed", "ongoing", "cancelled", "pending", "deleted"],
-        default: "pending"
+        enum: ["completed", "ongoing", "cancelled", "deleted"],
+        default: "ongoing"
     },
     paymentStatus: {
         type: String,
@@ -63,7 +83,7 @@ const sessionSchema = new Schema({
             default: null
         }
     }
-});
+}, { timestamps: true });
 
 const Session = mongoose.model("Session", sessionSchema);
 
