@@ -1,13 +1,32 @@
 import { Router } from "express";
-import { createTransaction, deleteTransaction, getAllTransactions, getTransactionById, updateTransaction } from "../controllers/transaction.control.js";
+import { 
+  createTransaction, 
+  deleteTransaction, 
+  getAllTransactions, 
+  getTransactionById, 
+  updateTransaction,
+  getUserTransactions
+} from "../controllers/transaction.control.js";
+import { verifyToken } from "../middlewares/verifyToken.js";
+import { validateCreateTransaction } from "../middlewares/validation/transaction.validation.js";
+import { isSuperAdmin } from "../middlewares/isSuperAdmin.js";
 
+const router = Router();
 
-const transaction = Router();
+// Public routes (if any)
+// router.get("/public/transactions", getPublicTransactions);
 
-transaction.post("/create", createTransaction);
-transaction.get("/", getAllTransactions);
-transaction.get("/:id", getTransactionById);
-transaction.put("/:id", updateTransaction);
-transaction.delete("/:id", deleteTransaction);
+// Protected routes (require authentication)
+router.use(verifyToken);
 
-export default transaction;
+// User-specific routes
+router.get("/user/:userId", getUserTransactions);
+
+// Admin-only routes
+router.use(isSuperAdmin);
+router.post("/", validateCreateTransaction, createTransaction);
+router.get("/", getAllTransactions);
+router.put("/:id", updateTransaction);
+router.delete("/:id", deleteTransaction);
+
+export default router;

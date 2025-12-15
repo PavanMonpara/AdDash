@@ -15,6 +15,8 @@ import complaint from "./complaint.js";
 import softDelete from "./softDeleteApi.js";
 import reviewRoutes from "./reviewApi.js";
 import dashboard from "./dashboardApi.js";
+import notificationRoutes from "./notificationApi.js";
+import reportRoutes from "./reportApi.js";
 
 const router = Router();
 
@@ -52,5 +54,9 @@ router.use("/manage", softDelete);
 
 // Review routes
 router.use("/reviews", reviewRoutes);
+
+// Notification routes
+router.use("/notifications", notificationRoutes);
+router.use("/reports", reportRoutes);
 
 export default router;

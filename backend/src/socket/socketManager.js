@@ -4,6 +4,7 @@ import supportChatHandler from "../handlers/supportChat.js";
 import sessionChatHandler from "../handlers/sessionChat.js";
 import sessionCallHandler from "../handlers/sessionCall.js";
 import sessionLifecycleHandler from "../handlers/sessionLifecycle.js";
+import { notificationHandler } from "../handlers/notificationHandler.js";
 
 dotenv.config();
 
@@ -19,7 +20,11 @@ export const initSocket = (httpServer, options = {}) => {
     path,
     cors: {
       origin: corsOrigin,
+      methods: ["GET", "POST"],
+      credentials: true
     },
+    pingTimeout: 30000,
+    pingInterval: 25000
   });
 
   // Register your socket handlers here
@@ -27,6 +32,11 @@ export const initSocket = (httpServer, options = {}) => {
   sessionChatHandler(ioInstance);
   sessionCallHandler(ioInstance);
   sessionLifecycleHandler(ioInstance);
+  
+  // Initialize notification handler and export its methods
+  const { sendNotification, broadcastNotification } = notificationHandler(ioInstance);
+  ioInstance.sendNotification = sendNotification;
+  ioInstance.broadcastNotification = broadcastNotification;
 
   return ioInstance;
 };

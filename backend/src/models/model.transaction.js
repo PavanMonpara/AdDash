@@ -12,6 +12,20 @@ const transactionSchema = new Schema(
       ref: "User",
       required: true,
     },
+    recipient: {
+      type: Schema.Types.ObjectId,
+      ref: "Listener",
+      required: function() {
+        return ['session payment', 'refund', 'commission'].includes(this.type);
+      }
+    },
+    session: {
+      type: Schema.Types.ObjectId,
+      ref: "Session",
+      required: function() {
+        return this.type === 'session payment';
+      }
+    },
     type: {
       type: String,
       enum: ["deposit", "withdrawal", "session payment", "refund", "commission"],
@@ -35,12 +49,45 @@ const transactionSchema = new Schema(
       type: String,
       default: "-",
     },
-    timestamp: {
-      type: Date,
-      default: Date.now,
+    notes: {
+      type: String,
+      default: ""
     },
   },
+  {
+    timestamps: true,
+    toJSON: { virtuals: true },
+    toObject: { virtuals: true }
+  }
 );
+
+// Add virtual populate for user and recipient details
+transactionSchema.virtual('userDetails', {
+  ref: 'User',
+  localField: 'user',
+  foreignField: '_id',
+  justOne: true,
+  select: 'username email phoneNumber profilePic alias'
+});
+
+transactionSchema.virtual('recipientDetails', {
+  ref: 'User',
+  localField: 'recipient',
+  foreignField: '_id',
+  justOne: true,
+  select: 'username email phoneNumber profilePic alias role'
+});
+
+transactionSchema.virtual('sessionDetails', {
+  ref: 'Session',
+  localField: 'session',
+  foreignField: '_id',
+  justOne: true
+});
+
+// Add indexes for better query performance
+transactionSchema.index({ user: 1, status: 1, timestamp: -1 });
+transactionSchema.index({ recipient: 1, status: 1, timestamp: -1 });
 
 const Transaction = mongoose.model("Transaction", transactionSchema);
 export default Transaction;
