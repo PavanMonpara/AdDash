@@ -1,5 +1,6 @@
 import { Notification } from "../models/model.notification.js";
 import { User } from "../models/model.login.js";
+import { sendPushNotification } from "../services/firebaseService.js";
 
 // Auth handled globally
 const notificationHandler = (io) => {
@@ -175,6 +176,25 @@ const notificationHandler = (io) => {
       if (recipientSocketId) {
         io.to(recipientSocketId).emit('new_notification', notification);
         await updateUnreadCount(notification.recipient);
+      } else {
+        // User is offline, send Push Notification
+        try {
+          const user = await User.findById(notification.recipient).select("fcmToken");
+          if (user?.fcmToken) {
+            await sendPushNotification(
+              user.fcmToken,
+              notification.title,
+              notification.message,
+              {
+                ...notification.data,
+                notificationId: notification._id.toString(),
+                type: notification.type
+              }
+            );
+          }
+        } catch (pushError) {
+          console.error("Failed to send push notification:", pushError);
+        }
       }
 
       // If admin notification is requested

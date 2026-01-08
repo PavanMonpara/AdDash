@@ -7,6 +7,7 @@ import transaction from "./transactionApi.js";
 import withdraw from "./withdrawApi.js";
 import ticket from "./ticketApi.js";
 import chat from "./chatApi.js";
+import chatList from "./chatList.js";
 import call from "./callApi.js";
 import roles from "./rolesApi.js";
 import faqsApi from "./faqsApi.js";
@@ -39,6 +40,7 @@ router.use("/withdrawls", withdraw);
 router.use("/tickets", ticket);
 
 router.use("/chats", chat);
+router.use("/chat-lists", chatList);
 
 router.use("/calls", call);
 

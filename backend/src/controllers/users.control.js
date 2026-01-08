@@ -385,3 +385,42 @@ export const blockUser = async (req, res) => {
     });
   }
 };
+// UPDATE USER FCM TOKEN
+export const updateUserFcmToken = async (req, res) => {
+  const { fcmToken } = req.body;
+  const userId = req.user.id; // From verifyToken/isAuthenticated middleware
+
+  if (!fcmToken) {
+    return res.status(httpStatus.BAD_REQUEST).json({
+      success: false,
+      message: "FCM Token is required",
+    });
+  }
+
+  try {
+    const user = await User.findByIdAndUpdate(
+      userId,
+      { fcmToken },
+      { new: true }
+    );
+
+    if (!user) {
+      return res.status(httpStatus.NOT_FOUND).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+
+    return res.status(httpStatus.OK).json({
+      success: true,
+      message: "FCM Token updated successfully",
+    });
+  } catch (error) {
+    console.error("Error updating FCM token:", error);
+    return res.status(httpStatus.INTERNAL_SERVER_ERROR).json({
+      success: false,
+      message: "Failed to update FCM token",
+      error: error.message,
+    });
+  }
+};

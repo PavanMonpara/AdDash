@@ -12,6 +12,7 @@ const userScheme = new Schema({
     default: "user"
   },
   token: { type: String },
+  fcmToken: { type: String },
   username: { type: String, unique: true, sparse: true },
   about: { type: String },
   cCode: { type: String, required: true },

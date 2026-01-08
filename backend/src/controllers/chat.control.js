@@ -1,9 +1,11 @@
 import ChatMessage from "../models/model.chatMessage.js";
+import { updateChatListOnNewMessage } from "./chatList.controller.js";
 
 export const sendMessage = async (req, res) => {
   try {
     const { session, sender, receiver, message, messageType } = req.body;
 
+    // Create the message
     const msg = await ChatMessage.create({
       session,
       sender,
@@ -12,8 +14,22 @@ export const sendMessage = async (req, res) => {
       messageType,
     });
 
-    res.status(201).json({ success: true, data: msg });
+    // Populate sender and receiver for socket emission
+    const populatedMessage = await ChatMessage.findById(msg._id)
+      .populate('sender', 'username email profileImage')
+      .populate('receiver', 'username email profileImage');
+
+    // Update chat lists for both sender and receiver
+    await updateChatListOnNewMessage(populatedMessage);
+
+    // Emit the new message to both users
+    const io = req.app.get('io');
+    io.to(`user_${sender}`).emit('message:new', { message: populatedMessage });
+    io.to(`user_${receiver}`).emit('message:new', { message: populatedMessage });
+
+    res.status(201).json({ success: true, data: populatedMessage });
   } catch (error) {
+    console.error('Error sending message:', error);
     res.status(400).json({ success: false, error: error.message });
   }
 };

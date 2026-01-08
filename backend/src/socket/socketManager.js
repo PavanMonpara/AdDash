@@ -9,6 +9,7 @@ import sessionChatHandler from "../handlers/sessionChat.js";
 import sessionCallHandler from "../handlers/sessionCall.js";
 import sessionLifecycleHandler from "../handlers/sessionLifecycle.js";
 import { notificationHandler } from "../handlers/notificationHandler.js";
+import chatListHandler from "../handlers/chatListHandler.js";
 
 dotenv.config();
 
@@ -111,6 +112,7 @@ export const initSocket = (httpServer, options = {}) => {
   sessionChatHandler(ioInstance);
   sessionCallHandler(ioInstance);
   sessionLifecycleHandler(ioInstance);
+  chatListHandler(ioInstance);
 
   // Initialize notification handler and export its methods
   const { sendNotification, broadcastNotification } = notificationHandler(ioInstance);

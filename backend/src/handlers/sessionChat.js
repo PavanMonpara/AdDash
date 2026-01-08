@@ -1,7 +1,9 @@
 import ChatMessage from "../models/model.chatMessage.js";
 import { Notification } from "../models/model.notification.js";
+import { User } from "../models/model.login.js";
 import { ensureParticipantCanAccessSession, getOrCreateSession, resolveListener } from "../services/sessionService.js";
 import { getIO } from "../socket/socketManager.js";
+import { sendPushNotification } from "../services/firebaseService.js";
 
 const roomForSession = (sessionId) => `session_chat_${sessionId}`;
 
@@ -106,8 +108,9 @@ export default function sessionChatHandler(io) {
 
             await notification.save();
 
-            // Send push notification if user is connected from another device
+            // Send push notification if user is connected from another device or completely offline
             if (ioInstance.sendNotification) {
+              // Internal socket notification (legacy/web socket based)
               ioInstance.sendNotification(receiverId, {
                 type: 'new_message',
                 data: {
@@ -118,6 +121,29 @@ export default function sessionChatHandler(io) {
                   timestamp: new Date()
                 }
               });
+            }
+
+            // Send FCM Push Notification
+            try {
+              // Verify User exists and get Token
+              const receiverUser = await User.findById(receiverId).select("fcmToken username");
+              const senderUser = await User.findById(senderId).select("username"); // Optimization: could be cached or passed in socket.user
+
+              if (receiverUser?.fcmToken) {
+                await sendPushNotification(
+                  receiverUser.fcmToken,
+                  `New Message from ${senderUser?.username || "User"}`,
+                  messageType === 'text' ? message : 'Sent a media file',
+                  {
+                    type: 'message',
+                    sessionId: String(sessionId),
+                    messageId: String(saved._id),
+                    senderId: String(senderId)
+                  }
+                );
+              }
+            } catch (pushError) {
+              console.error("Failed to send chat push notification:", pushError);
             }
           } catch (error) {
             console.error('Error creating notification:', error);

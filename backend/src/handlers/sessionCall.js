@@ -1,5 +1,7 @@
 import CallLog from "../models/model.callLog.js";
+import { User } from "../models/model.login.js";
 import { endSession, getOrCreateSession, resolveListener, ensureParticipantCanAccessSession } from "../services/sessionService.js";
+import { sendPushNotification } from "../services/firebaseService.js";
 
 const userRoom = (userId) => `user_${userId}`;
 
@@ -68,6 +70,31 @@ export default function sessionCallHandler(io) {
           from: selfId,
           startedAt: call.startTime,
         });
+
+        // Send VoIP Push Notification
+        try {
+          const receiver = await User.findById(receiverId).select("fcmToken username phoneNumber");
+          const caller = await User.findById(selfId).select("username phoneNumber");
+          
+          if (receiver?.fcmToken) {
+            await sendPushNotification(
+              receiver.fcmToken,
+              "Incoming Call",
+              `${caller?.username || "Unknown"} is calling you...`,
+              {
+                type: "call",
+                callId: String(call._id),
+                sessionId: String(resolvedSessionId),
+                callType,
+                callerName: caller?.username || "Unknown",
+                callerId: selfId
+              },
+              "call"
+            );
+          }
+        } catch (pushError) {
+          console.error("Failed to send call push notification:", pushError);
+        }
 
         // Ack back to caller
         socket.emit("call:started", {
