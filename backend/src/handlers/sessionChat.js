@@ -1,40 +1,12 @@
-import dotenv from "dotenv";
-import jwt from "jsonwebtoken";
-
 import ChatMessage from "../models/model.chatMessage.js";
+import { Notification } from "../models/model.notification.js";
 import { ensureParticipantCanAccessSession, getOrCreateSession, resolveListener } from "../services/sessionService.js";
-
-dotenv.config();
-
-const JWT_SECRET = process.env.JWT_SECRET;
+import { getIO } from "../socket/socketManager.js";
 
 const roomForSession = (sessionId) => `session_chat_${sessionId}`;
 
-const normalizeBearerToken = (authHeader) => {
-  if (!authHeader) return null;
-  if (typeof authHeader !== "string") return null;
-  if (authHeader.startsWith("Bearer ")) return authHeader.split(" ")[1];
-  return authHeader;
-};
-
 export default function sessionChatHandler(io) {
-  // Socket auth for chat namespace/handlers
-  io.use((socket, next) => {
-    try {
-      const token =
-        normalizeBearerToken(socket.handshake.auth?.token) ||
-        normalizeBearerToken(socket.handshake.headers?.authorization);
-
-      if (!token) return next(new Error("Authentication failed"));
-      if (!JWT_SECRET) return next(new Error("Server misconfigured: JWT_SECRET missing"));
-
-      const decoded = jwt.verify(token, JWT_SECRET);
-      socket.user = decoded; // {id, role, ...}
-      next();
-    } catch (e) {
-      next(new Error("Authentication failed"));
-    }
-  });
+  // Auth handled globally in socketManager.js
 
   io.on("connection", (socket) => {
     // join a chat room for a session
@@ -100,7 +72,9 @@ export default function sessionChatHandler(io) {
         });
 
         const roomId = roomForSession(sessionId);
+        const ioInstance = getIO();
 
+        // Emit message to all users in the room
         io.to(roomId).emit("chat:message", {
           id: saved._id,
           sessionId,
@@ -110,6 +84,45 @@ export default function sessionChatHandler(io) {
           messageType: saved.messageType,
           createdAt: saved.createdAt,
         });
+
+        // Create and send notification to receiver if they're not in the room
+        const clientsInRoom = await io.in(roomId).fetchSockets();
+        const isReceiverOnline = clientsInRoom.some(client => client.user?.id === receiverId);
+
+        if (!isReceiverOnline) {
+          try {
+            const notification = new Notification({
+              recipient: receiverId,
+              sender: senderId,
+              type: 'message',
+              title: 'New Message',
+              message: messageType === 'text' ? message : 'New media message received',
+              data: {
+                sessionId,
+                messageId: saved._id,
+                messageType
+              }
+            });
+
+            await notification.save();
+
+            // Send push notification if user is connected from another device
+            if (ioInstance.sendNotification) {
+              ioInstance.sendNotification(receiverId, {
+                type: 'new_message',
+                data: {
+                  sessionId,
+                  messageId: saved._id,
+                  sender: senderId,
+                  message: messageType === 'text' ? message : 'New media message',
+                  timestamp: new Date()
+                }
+              });
+            }
+          } catch (error) {
+            console.error('Error creating notification:', error);
+          }
+        }
       } catch (error) {
         socket.emit("error", { message: error?.message || "Failed to send message" });
       }

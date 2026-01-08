@@ -1,24 +1,15 @@
 import { Notification } from "../models/model.notification.js";
 import { User } from "../models/model.login.js";
 
+// Auth handled globally
 const notificationHandler = (io) => {
   // Store active user connections
   const activeUsers = new Map();
 
-  // Middleware to handle user authentication and connection
-  io.use((socket, next) => {
-    const userId = socket.handshake.auth.userId;
-    if (userId) {
-      socket.userId = userId;
-      return next();
-    }
-    return next(new Error('Authentication error'));
-  });
-
   // Handle new connection
   io.on('connection', (socket) => {
     console.log(`User connected: ${socket.userId}`);
-    
+
     // Add user to active users
     activeUsers.set(socket.userId, socket.id);
 
@@ -86,7 +77,7 @@ const notificationHandler = (io) => {
       const recipientSocketId = activeUsers.get(notification.recipient.toString());
       if (recipientSocketId) {
         io.to(recipientSocketId).emit('new_notification', notification);
-        
+
         // Update unread count
         const count = await Notification.countDocuments({
           recipient: notification.recipient,
@@ -107,7 +98,7 @@ const notificationHandler = (io) => {
     try {
       const users = Array.from(activeUsers.keys());
       const notifications = [];
-      
+
       // Create a notification for each active user
       for (const userId of users) {
         const notification = new Notification({
@@ -122,7 +113,7 @@ const notificationHandler = (io) => {
         const socketId = activeUsers.get(userId);
         if (socketId) {
           io.to(socketId).emit('new_notification', notification);
-          
+
           // Update unread count
           const count = await Notification.countDocuments({
             recipient: userId,
@@ -142,7 +133,7 @@ const notificationHandler = (io) => {
   // Helper function to get admin users
   const getAdminUsers = async () => {
     try {
-      return await User.find({ 
+      return await User.find({
         role: { $in: ['superAdmin', 'admin'] },
         status: 'active'
       }).select('_id');
@@ -212,7 +203,7 @@ const notificationHandler = (io) => {
     try {
       const admins = await getAdminUsers();
       const notifications = [];
-      
+
       for (const admin of admins) {
         // Skip if sender is the same as admin
         if (notificationData.sender && admin._id.toString() === notificationData.sender.toString()) {
@@ -225,7 +216,7 @@ const notificationHandler = (io) => {
           type: 'admin_' + (notificationData.type || 'system'),
           createdAt: new Date()
         });
-        
+
         await adminNotification.save();
         notifications.push(adminNotification);
 
@@ -243,8 +234,8 @@ const notificationHandler = (io) => {
     }
   };
 
-  return { 
-    sendNotification: enhancedSendNotification, 
+  return {
+    sendNotification: enhancedSendNotification,
     broadcastNotification,
     sendAdminNotification
   };

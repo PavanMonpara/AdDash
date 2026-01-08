@@ -32,10 +32,6 @@ const notificationSchema = new Schema({
     type: Schema.Types.Mixed,
     default: {}
   },
-  createdAt: {
-    type: Date,
-    default: Date.now
-  }
 }, { timestamps: true });
 
 // Index for faster querying

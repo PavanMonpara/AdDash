@@ -1,6 +1,3 @@
-import dotenv from "dotenv";
-import jwt from "jsonwebtoken";
-
 import {
   endSession,
   ensureParticipantCanAccessSession,
@@ -8,36 +5,10 @@ import {
   resolveListener,
 } from "../services/sessionService.js";
 
-dotenv.config();
-
-const JWT_SECRET = process.env.JWT_SECRET;
-
-const normalizeBearerToken = (authHeader) => {
-  if (!authHeader) return null;
-  if (typeof authHeader !== "string") return null;
-  if (authHeader.startsWith("Bearer ")) return authHeader.split(" ")[1];
-  return authHeader;
-};
-
 const userRoom = (userId) => `user_${userId}`;
 
 export default function sessionLifecycleHandler(io) {
-  io.use((socket, next) => {
-    try {
-      const token =
-        normalizeBearerToken(socket.handshake.auth?.token) ||
-        normalizeBearerToken(socket.handshake.headers?.authorization);
-
-      if (!token) return next(new Error("Authentication failed"));
-      if (!JWT_SECRET) return next(new Error("Server misconfigured: JWT_SECRET missing"));
-
-      const decoded = jwt.verify(token, JWT_SECRET);
-      socket.user = decoded;
-      next();
-    } catch {
-      next(new Error("Authentication failed"));
-    }
-  });
+  // Auth handled globally
 
   io.on("connection", (socket) => {
     const selfId = String(socket.user?.id);

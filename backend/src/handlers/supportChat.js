@@ -1,15 +1,9 @@
-import dotenv from "dotenv";
-import jwt from "jsonwebtoken";
-
+// Imports for models and logic
 import ChatMessage from "../models/model.chatMessage.js";
 import SupportTicket from "../models/model.supportTicket.js";
 import { User } from "../models/model.login.js";
-import { BlockedUser } from "../models/model.blockedUser.js";
-import { SuspendedListener } from "../models/model.suspendedListener.js";
 
-dotenv.config();
-
-const JWT_SECRET = process.env.JWT_SECRET;
+// Note: Auth and Blocked/Suspended checks are now handled globally in socketManager.js
 
 const isSupportStaff = (user) => {
   const role = user?.role;
@@ -28,71 +22,7 @@ export default function supportChatHandler(io) {
   const userRooms = new Map(); // userId -> roomId
   const socketToUser = new Map(); // userId -> socketId
 
-  const authenticateSocket = async (socket, next) => {
-    try {
-      const authHeader = socket.handshake.auth?.token || socket.handshake.headers?.authorization;
-      const token = typeof authHeader === "string" && authHeader.startsWith("Bearer ")
-        ? authHeader.split(" ")[1]
-        : authHeader;
-
-      if (!token) {
-        throw new Error("No token provided");
-      }
-
-      if (!JWT_SECRET) {
-        throw new Error("JWT_SECRET is missing in .env");
-      }
-
-      const decoded = jwt.verify(token, JWT_SECRET);
-
-      const dbUser = await User.findById(decoded.id).select(
-        "email username cCode phoneNumber role roles"
-      );
-
-      if (!dbUser) {
-        throw new Error("User not found");
-      }
-
-      const blocked = await BlockedUser.findOne({
-        $or: [
-          { userId: dbUser._id },
-          { email: dbUser.email },
-          { username: dbUser.username },
-          { cCode: dbUser.cCode, phoneNumber: dbUser.phoneNumber },
-        ],
-      });
-
-      if (blocked) {
-        throw new Error("Blocked user cannot use support chat");
-      }
-
-      const suspended = await SuspendedListener.findOne({
-        $or: [
-          { userId: dbUser._id },
-          { cCode: dbUser.cCode, phoneNumber: dbUser.phoneNumber },
-        ],
-      });
-
-      if (suspended) {
-        throw new Error("Suspended listener cannot use support chat");
-      }
-
-      // Keep decoded + DB role info available on socket
-      socket.user = {
-        ...decoded,
-        role: dbUser.role,
-        roles: dbUser.roles || [],
-        username: dbUser.username,
-      };
-
-      next();
-    } catch (error) {
-      console.error("Socket auth error:", error?.message || error);
-      next(new Error("Authentication failed"));
-    }
-  };
-
-  io.use(authenticateSocket).on("connection", (socket) => {
+  io.on("connection", (socket) => {
     const userId = socket.user?.id;
 
     console.log("Client connected:", userId);

@@ -17,6 +17,7 @@ import reviewRoutes from "./reviewApi.js";
 import dashboard from "./dashboardApi.js";
 import notificationRoutes from "./notificationApi.js";
 import reportRoutes from "./reportApi.js";
+import agoraRoutes from "./agora.js";
 
 const router = Router();
 
@@ -58,5 +59,10 @@ router.use("/reviews", reviewRoutes);
 // Notification routes
 router.use("/notifications", notificationRoutes);
 router.use("/reports", reportRoutes);
+
+router.use("/soft-delete", softDelete);
+
+// Agora RTC/RTM routes
+router.use("/live", agoraRoutes);
 
 export default router;
