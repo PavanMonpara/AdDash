@@ -20,24 +20,24 @@ if (!JWT_SECRET) {
 }
 
 const createSafeUserResponse = (userDoc) => {
-    return {
-        userid : userDoc._id,
-        username: userDoc.username,
-        role: userDoc.role,
-        cCode: userDoc.cCode,
-        phoneNumber: userDoc.phoneNumber,
-        status: userDoc.status,
-        lastActive: userDoc.lastActive,
-        registered: userDoc.registered,
-        sessions: userDoc.sessions || [],
-        tickets: userDoc.tickets || [],
-        verified: !!userDoc.verified,
-        lang: userDoc.lang,
-        gender: userDoc.gender,
-    };
+  return {
+    userid: userDoc._id,
+    username: userDoc.username,
+    role: userDoc.role,
+    cCode: userDoc.cCode,
+    phoneNumber: userDoc.phoneNumber,
+    status: userDoc.status,
+    lastActive: userDoc.lastActive,
+    registered: userDoc.registered,
+    sessions: userDoc.sessions || [],
+    tickets: userDoc.tickets || [],
+    verified: !!userDoc.verified,
+    lang: userDoc.lang,
+    gender: userDoc.gender,
+  };
 };
 
-const login = async (req, res) => {             
+const login = async (req, res) => {
   try {
     const { email, password } = req.body;
 
@@ -109,73 +109,73 @@ const login = async (req, res) => {
 
 
 const register = async (req, res) => {
-    const { email, password, username, cCode, phoneNumber } = req.body;
+  const { email, password, username, cCode, phoneNumber } = req.body;
 
-    if (!email || !password || !username || !cCode || !phoneNumber) {
-        return res.status(httpStatus.BAD_REQUEST).json({
-            message: "Please provide all required fields: email, password, username, cCode, and phoneNumber"
-        });
+  if (!email || !password || !username || !cCode || !phoneNumber) {
+    return res.status(httpStatus.BAD_REQUEST).json({
+      message: "Please provide all required fields: email, password, username, cCode, and phoneNumber"
+    });
+  }
+
+  try {
+    const existingUser = await User.findOne({ $or: [{ email }, { username }] });
+    if (existingUser) {
+      const message = existingUser.email === email
+        ? "User with this email already exists"
+        : "Username is already taken";
+      return res.status(httpStatus.CONFLICT).json({ message });
     }
 
-    try {
-        const existingUser = await User.findOne({ $or: [{ email }, { username }] });
-        if (existingUser) {
-            const message = existingUser.email === email
-                ? "User with this email already exists"
-                : "Username is already taken";
-            return res.status(httpStatus.CONFLICT).json({ message });
-        }
+    const hashedPassword = await bcrypt.hash(password, 10);
+    const token = crypto.randomBytes(20).toString("hex");
+    const newUser = new User({
+      email,
+      password: hashedPassword,
+      username,
+      cCode,
+      phoneNumber,
+      token,
+      lastActive: Date.now()
+    });
 
-        const hashedPassword = await bcrypt.hash(password, 10);
-        const token = crypto.randomBytes(20).toString("hex");
-        const newUser = new User({
-            email,
-            password: hashedPassword,
-            username,
-            cCode,
-            phoneNumber,
-            token,
-            lastActive: Date.now()
-        });
+    await newUser.save();
+    const userResponse = createSafeUserResponse(newUser);
 
-        await newUser.save();
-        const userResponse = createSafeUserResponse(newUser);
-
-        return res.status(httpStatus.CREATED).json({
-            message: "User Registered Successfully",
-            token,
-            user: userResponse
-        });
-    } catch (e) {
-        console.error("Register error:", e);
-        if (e.code === 11000) {
-            return res.status(httpStatus.CONFLICT).json({ message: "Email or username already exists." });
-        }
-        return res.status(httpStatus.INTERNAL_SERVER_ERROR).json({ message: `Something went wrong: ${e.message}` });
+    return res.status(httpStatus.CREATED).json({
+      message: "User Registered Successfully",
+      token,
+      user: userResponse
+    });
+  } catch (e) {
+    console.error("Register error:", e);
+    if (e.code === 11000) {
+      return res.status(httpStatus.CONFLICT).json({ message: "Email or username already exists." });
     }
+    return res.status(httpStatus.INTERNAL_SERVER_ERROR).json({ message: `Something went wrong: ${e.message}` });
+  }
 }
 
 // const FIXED_OTP = "123456";
 
 const ALLOWED_LANGS = [
-    "hindi",
-    "english",
-    "tamil",
-    "malyalam",
-    "telugu",
-    "punjabi",
-    "gujarati",
-    "marathi",
+  "hindi",
+  "english",
+  "tamil",
+  "malyalam",
+  "telugu",
+  "punjabi",
+  "gujarati",
+  "marathi",
 ];
 
 const ALLOWED_GENDERS = ["male", "female", "other"];
 
 const generateReferralCode = () => {
-    return "USR" + Math.floor(10000 + Math.random() * 90000);
+  return "USR" + Math.floor(10000 + Math.random() * 90000);
 };
 
 const appLogin = async (req, res) => {
-  const { phoneNumber, cCode = "", lang, gender, referralCode } = req.body;
+  const { phoneNumber, cCode = "", lang, gender, referralCode, fcmToken } = req.body;
 
   if (!phoneNumber || !cCode) {
     return res
@@ -271,7 +271,8 @@ const appLogin = async (req, res) => {
         gender: genderLower,
         myReferralCode,
         referredBy: referredByUser?._id || null,
-        role: "user"
+        role: "user",
+        fcmToken // Added here
       });
 
       await user.save();
@@ -286,6 +287,7 @@ const appLogin = async (req, res) => {
       user.token = sessionToken;
       user.verified = true;
       user.lastActive = now;
+      if (fcmToken) user.fcmToken = fcmToken; // Update fcmToken if provided
       await user.save();
     }
 
@@ -366,7 +368,7 @@ const sendOtp = async (req, res) => {
 // verifyOtp – sirf verify karega + batayega registered hai ya nahi
 // verifyOtp – AB DIRECT LOGIN BHI KAREGA JAB USER PURANA HAI
 const verifyOtp = async (req, res) => {
-  const { phoneNumber, otp, cCode = "" } = req.body;
+  const { phoneNumber, otp, cCode = "", fcmToken } = req.body;
 
   if (!phoneNumber || !otp || !cCode) {
     return res.status(httpStatus.BAD_REQUEST).json({
@@ -417,6 +419,7 @@ const verifyOtp = async (req, res) => {
       user.token = sessionToken;
       user.lastActive = now;
       user.verified = true;
+      if (fcmToken) user.fcmToken = fcmToken; // Update fcmToken
       await user.save();
 
       const accessToken = jwt.sign(

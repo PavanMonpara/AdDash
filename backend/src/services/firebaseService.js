@@ -102,3 +102,27 @@ export const sendPushNotification = async (token, title, body, data = {}, type =
         return null;
     }
 };
+
+/**
+ * Fetch FCM token from Firestore users collection
+ * @param {string} firebaseUid - The Firebase User ID
+ */
+export const getFcmTokenFromFirestore = async (firebaseUid) => {
+    if (!firebaseApp) {
+        initFirebase();
+        if (!firebaseApp) return null;
+    }
+
+    try {
+        const doc = await admin.firestore().collection('users').doc(firebaseUid).get();
+        if (!doc.exists) {
+            console.log('No such document in Firestore!');
+            return null;
+        }
+        const data = doc.data();
+        return data.fcmToken || null;
+    } catch (error) {
+        console.error("Error fetching from Firestore:", error);
+        return null;
+    }
+};

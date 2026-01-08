@@ -385,35 +385,63 @@ export const blockUser = async (req, res) => {
     });
   }
 };
-// UPDATE USER FCM TOKEN
-export const updateUserFcmToken = async (req, res) => {
-  const { fcmToken } = req.body;
-  const userId = req.user.id; // From verifyToken/isAuthenticated middleware
-
-  if (!fcmToken) {
-    return res.status(httpStatus.BAD_REQUEST).json({
-      success: false,
-      message: "FCM Token is required",
-    });
-  }
+// SYNC FCM TOKEN FROM FIREBASE
+export const syncFcmFromFirebase = async (req, res) => {
+  const { firebaseUid, id: userId } = req.user;
 
   try {
-    const user = await User.findByIdAndUpdate(
-      userId,
-      { fcmToken },
-      { new: true }
-    );
+    // Lazy load to avoid circular dependency issues if any
+    const { getFcmTokenFromFirestore } = await import("../services/firebaseService.js");
 
-    if (!user) {
+    const fcmToken = await getFcmTokenFromFirestore(firebaseUid);
+
+    if (!fcmToken) {
       return res.status(httpStatus.NOT_FOUND).json({
         success: false,
-        message: "User not found",
+        message: "FCM Token not found in Firebase for this UID",
       });
     }
+
+    await User.findByIdAndUpdate(userId, { fcmToken });
+
+    return res.status(httpStatus.OK).json({
+      success: true,
+      message: "FCM Token synced successfully",
+      fcmToken
+    });
+  } catch (error) {
+    console.error("Error syncing FCM token:", error);
+    return res.status(httpStatus.INTERNAL_SERVER_ERROR).json({
+      success: false,
+      message: "Failed to sync FCM token",
+      error: error.message,
+    });
+  }
+};
+
+export const updateUserFcmToken = async (req, res) => {
+  // Use the same logic as syncFcmFromFirebase
+  const { firebaseUid, id: userId } = req.user;
+
+  try {
+    // Lazy load to avoid circular dependency issues if any
+    const { getFcmTokenFromFirestore } = await import("../services/firebaseService.js");
+
+    const fcmToken = await getFcmTokenFromFirestore(firebaseUid);
+
+    if (!fcmToken) {
+      return res.status(httpStatus.NOT_FOUND).json({
+        success: false,
+        message: "FCM Token not found in Firebase for this UID",
+      });
+    }
+
+    await User.findByIdAndUpdate(userId, { fcmToken });
 
     return res.status(httpStatus.OK).json({
       success: true,
       message: "FCM Token updated successfully",
+      fcmToken // Optional to return
     });
   } catch (error) {
     console.error("Error updating FCM token:", error);
