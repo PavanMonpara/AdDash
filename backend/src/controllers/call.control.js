@@ -22,6 +22,24 @@ export const getCallLogs = async (req, res) => {
   }
 };
 
+export const getCallLogsByUser = async (req, res) => {
+  try {
+    const { userId } = req.params;
+
+    if (!userId) {
+      return res.status(400).json({ success: false, error: "User ID is required" });
+    }
+
+    const logs = await CallLog.find({
+      $or: [{ caller: userId }, { receiver: userId }]
+    }).sort({ createdAt: -1 });
+
+    res.status(200).json({ success: true, count: logs.length, data: logs });
+  } catch (error) {
+    res.status(400).json({ success: false, error: error.message });
+  }
+};
+
 export const flagCall = async (req, res) => {
   try {
     const { id } = req.params;
