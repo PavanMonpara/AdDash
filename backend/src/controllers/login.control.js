@@ -10,7 +10,7 @@ import { SuspendedListener } from "../models/model.suspendedListener.js";
 dotenv.config();
 
 const JWT_SECRET = process.env.JWT_SECRET;
-const ACCESS_TOKEN_EXPIRE = process.env.ACCESS_TOKEN_EXPIRE || "15m";
+const ACCESS_TOKEN_EXPIRE = process.env.ACCESS_TOKEN_EXPIRE || "7d";
 const REFRESH_TOKEN_EXPIRE = process.env.REFRESH_TOKEN_EXPIRE || "7d";
 
 // Agar .env mein secret nahi mila toh warning + crash (production safe)
