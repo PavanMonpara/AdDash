@@ -7,7 +7,7 @@ const call = Router();
 
 call.post("/", logCall);
 call.get("/", getCallLogs);
-call.get("/:userId", verifyToken, getCallLogsByUser);
+call.get("/:userId", verifyToken, isAuthenticated, getCallLogsByUser);
 call.put("/:id/flag", flagCall);
 call.put("/:id/unflag", unflagCall);
 call.get("/flagged/all", getFlaggedCalls);
