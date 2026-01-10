@@ -4,6 +4,7 @@ import { User } from "../models/model.login.js";
 import { ensureParticipantCanAccessSession, getOrCreateSession, resolveListener } from "../services/sessionService.js";
 import { getIO } from "../socket/socketManager.js";
 import { sendPushNotification } from "../services/firebaseService.js";
+import mongoose from "mongoose";
 
 const roomForSession = (sessionId) => `session_chat_${sessionId}`;
 
@@ -15,6 +16,14 @@ export default function sessionChatHandler(io) {
     socket.on("chat:join", async ({ sessionId, listenerId, listenerUserId, type = "chat" }) => {
       try {
         let resolvedSessionId = sessionId;
+
+        // Validate sessionId format if provided
+        if (resolvedSessionId && !mongoose.Types.ObjectId.isValid(resolvedSessionId)) {
+          // If the ID is special (like a room ID) or just invalid, we cannot lookup a Session with it.
+          // Treat it as null to trigger auto-creation or error if no listener details provided.
+          console.warn(`[chat:join] Invalid sessionId format: ${resolvedSessionId}. Ignoring.`);
+          resolvedSessionId = null;
+        }
 
         // Auto-create session if not provided
         if (!resolvedSessionId) {
@@ -55,6 +64,7 @@ export default function sessionChatHandler(io) {
     socket.on("chat:message", async ({ sessionId, message, messageType = "text" }) => {
       try {
         if (!sessionId) throw new Error("sessionId is required");
+        if (!mongoose.Types.ObjectId.isValid(sessionId)) throw new Error("Invalid sessionId format");
         if (!message) throw new Error("message is required");
 
         const { userId, listenerUserId } = await ensureParticipantCanAccessSession({
