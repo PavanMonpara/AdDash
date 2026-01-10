@@ -68,9 +68,6 @@ export const initSocket = (httpServer, options = {}) => {
       const blocked = await BlockedUser.findOne({
         $or: [
           { userId: dbUser._id },
-          { email: dbUser.email },
-          { username: dbUser.username },
-          { cCode: dbUser.cCode, phoneNumber: dbUser.phoneNumber },
         ],
       });
 
@@ -82,7 +79,6 @@ export const initSocket = (httpServer, options = {}) => {
       const suspended = await SuspendedListener.findOne({
         $or: [
           { userId: dbUser._id },
-          { cCode: dbUser.cCode, phoneNumber: dbUser.phoneNumber },
         ],
       });
 
