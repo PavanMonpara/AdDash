@@ -13,7 +13,10 @@ app.use(express.json());
 
 const server = createServer(app);
 
-initSocket(server);
+app.get("/socket", (req, res) => {
+    initSocket(server);
+    res.send({ message: "Socket.IO Service is running.", success: true });
+});
 
 app.get('/', (req, res) => {
     res.send('Hello World!');

@@ -26,7 +26,7 @@ let ioInstance = null;
 export const initSocket = (httpServer, options = {}) => {
   const {
     corsOrigin = process.env.SOCKET_CORS_ORIGIN || "*",
-    path = process.env.SOCKET_IO_PATH || "/socket.io",
+    path = process.env.SOCKET_IO_PATH || "/socket",
   } = options;
 
   ioInstance = new Server(httpServer, {
@@ -39,6 +39,8 @@ export const initSocket = (httpServer, options = {}) => {
     pingTimeout: 30000,
     pingInterval: 25000
   });
+
+  console.log(`socket init, instance with path: ${path}`);
 
   // Centralized Authentication Middleware
   ioInstance.use(async (socket, next) => {
@@ -105,6 +107,15 @@ export const initSocket = (httpServer, options = {}) => {
       console.error("Socket auth error:", error.message);
       next(new Error("Authentication failed"));
     }
+  });
+
+  // Global connection monitoring
+  ioInstance.on("connection", (socket) => {
+    console.log(`[Socket] Connected: ${socket.id} | User: ${socket.user?.username || "Unknown"} (${socket.user?.id})`);
+
+    socket.on("disconnect", (reason) => {
+      console.log(`[Socket] Disconnected: ${socket.id} | Reason: ${reason}`);
+    });
   });
 
   // Register your socket handlers here
