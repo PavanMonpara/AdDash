@@ -8,6 +8,52 @@ import mongoose from "mongoose";
 
 const roomForSession = (sessionId) => `session_chat_${sessionId}`;
 
+// Helper to resolve session ID from potentially composite ID (userId_otherId)
+const resolveSessionFromId = async (inputSessionId, socketUserId, type = "chat") => {
+  if (!inputSessionId) return null;
+
+  // 1. If valid ObjectId, assume it's a real Session ID
+  if (mongoose.Types.ObjectId.isValid(inputSessionId)) {
+    return inputSessionId;
+  }
+
+  // 2. Check for composite ID format (id1_id2)
+  if (typeof inputSessionId === 'string' && inputSessionId.includes('_')) {
+    const parts = inputSessionId.split('_');
+    if (parts.length === 2 && mongoose.Types.ObjectId.isValid(parts[0]) && mongoose.Types.ObjectId.isValid(parts[1])) {
+
+      const otherUserId = parts[0] === socketUserId ? parts[1] : (parts[1] === socketUserId ? parts[0] : null);
+
+      if (!otherUserId) {
+        throw new Error("Invalid composite session ID: Requester not in participants");
+      }
+
+      // We need to resolve who is the listener. 
+      // Strategy: Try resolving "otherUserId" as listener first (User -> Listener case)
+      // Then try resolving "socketUserId" as listener (Listener -> User case)
+
+      try {
+        // Case A: I am User, Other is Listener
+        const { listenerId } = await resolveListener({ listenerUserId: otherUserId });
+        const session = await getOrCreateSession({ userId: socketUserId, listenerId, type });
+        return String(session._id);
+      } catch (e1) {
+        try {
+          // Case B: I am Listener, Other is User
+          const { listenerId } = await resolveListener({ listenerUserId: socketUserId });
+          const session = await getOrCreateSession({ userId: otherUserId, listenerId, type });
+          return String(session._id);
+        } catch (e2) {
+          console.warn(`[resolveSessionFromId] Could not resolve listener from participants: ${parts.join(', ')}`);
+        }
+      }
+    }
+  }
+
+  // Return original (or null) if resolution failed, to let downstream handlers handle errors or auto-creation logic
+  return null;
+};
+
 export default function sessionChatHandler(io) {
   // Auth handled globally in socketManager.js
 
@@ -15,35 +61,39 @@ export default function sessionChatHandler(io) {
     // join a chat room for a session
     socket.on("chat:join", async ({ sessionId, listenerId, listenerUserId, type = "chat" }) => {
       try {
-        let resolvedSessionId = sessionId;
+        const socketUserId = String(socket.user?.id);
+        let resolvedSessionId = await resolveSessionFromId(sessionId, socketUserId, type);
 
-        // Validate sessionId format if provided
-        if (resolvedSessionId && !mongoose.Types.ObjectId.isValid(resolvedSessionId)) {
-          // If the ID is special (like a room ID) or just invalid, we cannot lookup a Session with it.
-          // Treat it as null to trigger auto-creation or error if no listener details provided.
-          console.warn(`[chat:join] Invalid sessionId format: ${resolvedSessionId}. Ignoring.`);
-          resolvedSessionId = null;
+        // Auto-create session if not provided or resolved
+        if (!resolvedSessionId) {
+          // Fallback to explicit listenerId/listenerUserId logic if sessionId wasn't resolved
+          if (listenerId || listenerUserId) {
+            const resolvedListener = await resolveListener({ listenerId, listenerUserId });
+            const session = await getOrCreateSession({
+              userId: socketUserId,
+              listenerId: resolvedListener.listenerId,
+              type,
+            });
+            resolvedSessionId = String(session._id);
+          } else {
+            // If we couldn't resolve from ID string AND no explicit listener details, we can't join.
+            if (sessionId) console.warn(`[chat:join] Could not resolve session: ${sessionId}`);
+            return; // Or throw error? validation logic below will handle it
+          }
         }
 
-        // Auto-create session if not provided
-        if (!resolvedSessionId) {
-          const resolvedListener = await resolveListener({ listenerId, listenerUserId });
-          const session = await getOrCreateSession({
-            userId: String(socket.user?.id),
-            listenerId: resolvedListener.listenerId,
-            type,
-          });
-          resolvedSessionId = String(session._id);
+        if (!resolvedSessionId || !mongoose.Types.ObjectId.isValid(resolvedSessionId)) {
+          // Should not happen if logic above works, but safety check
+          throw new Error("Invalid session identifier");
         }
 
         const { userId, listenerUserId: participantListenerUserId } =
           await ensureParticipantCanAccessSession({
             sessionId: resolvedSessionId,
-            requesterUserId: String(socket.user?.id),
+            requesterUserId: socketUserId,
           });
 
-        const requesterId = String(socket.user?.id);
-        if (requesterId !== userId && requesterId !== participantListenerUserId) {
+        if (socketUserId !== userId && socketUserId !== participantListenerUserId) {
           throw new Error("You are not a participant of this session");
         }
 
@@ -51,7 +101,7 @@ export default function sessionChatHandler(io) {
         await socket.join(roomId);
 
         console.log(
-          `[socket] chat activated | sessionId=${resolvedSessionId} | userId=${requesterId} | socketId=${socket.id}`
+          `[socket] chat activated | sessionId=${resolvedSessionId} | userId=${socketUserId} | socketId=${socket.id}`
         );
 
         socket.emit("chat:joined", { sessionId: resolvedSessionId, roomId });
@@ -64,32 +114,36 @@ export default function sessionChatHandler(io) {
     socket.on("chat:message", async ({ sessionId, message, messageType = "text" }) => {
       try {
         if (!sessionId) throw new Error("sessionId is required");
-        if (!mongoose.Types.ObjectId.isValid(sessionId)) throw new Error("Invalid sessionId format");
         if (!message) throw new Error("message is required");
 
+        const socketUserId = String(socket.user?.id);
+        const resolvedSessionId = await resolveSessionFromId(sessionId, socketUserId); // type defaults to chat
+
+        if (!resolvedSessionId) throw new Error("Invalid sessionId or session not found");
+
         const { userId, listenerUserId } = await ensureParticipantCanAccessSession({
-          sessionId,
-          requesterUserId: String(socket.user?.id),
+          sessionId: resolvedSessionId,
+          requesterUserId: socketUserId,
         });
 
-        const senderId = String(socket.user?.id);
+        const senderId = socketUserId;
         const receiverId = senderId === userId ? listenerUserId : userId;
 
         const saved = await ChatMessage.create({
-          session: sessionId,
+          session: resolvedSessionId,
           sender: senderId,
           receiver: receiverId,
           message,
           messageType,
         });
 
-        const roomId = roomForSession(sessionId);
+        const roomId = roomForSession(resolvedSessionId);
         const ioInstance = getIO();
 
         // Emit message to all users in the room
         io.to(roomId).emit("chat:message", {
           id: saved._id,
-          sessionId,
+          sessionId: resolvedSessionId, // Send back the REAL ObjectId
           sender: saved.sender,
           receiver: saved.receiver,
           message: saved.message,
@@ -110,7 +164,7 @@ export default function sessionChatHandler(io) {
               title: 'New Message',
               message: messageType === 'text' ? message : 'New media message received',
               data: {
-                sessionId,
+                sessionId: resolvedSessionId,
                 messageId: saved._id,
                 messageType
               }
@@ -124,7 +178,7 @@ export default function sessionChatHandler(io) {
               ioInstance.sendNotification(receiverId, {
                 type: 'new_message',
                 data: {
-                  sessionId,
+                  sessionId: resolvedSessionId,
                   messageId: saved._id,
                   sender: senderId,
                   message: messageType === 'text' ? message : 'New media message',
@@ -146,7 +200,7 @@ export default function sessionChatHandler(io) {
                   messageType === 'text' ? message : 'Sent a media file',
                   {
                     type: 'message',
-                    sessionId: String(sessionId),
+                    sessionId: String(resolvedSessionId),
                     messageId: String(saved._id),
                     senderId: String(senderId)
                   }
@@ -168,18 +222,23 @@ export default function sessionChatHandler(io) {
       try {
         if (!sessionId) return;
 
+        const socketUserId = String(socket.user?.id);
+        const resolvedSessionId = await resolveSessionFromId(sessionId, socketUserId);
+
+        if (!resolvedSessionId) return; // Ignore if invalid
+
         const { userId, listenerUserId } = await ensureParticipantCanAccessSession({
-          sessionId,
-          requesterUserId: String(socket.user?.id),
+          sessionId: resolvedSessionId,
+          requesterUserId: socketUserId,
         });
 
-        const senderId = String(socket.user?.id);
+        const senderId = socketUserId;
 
         if (senderId !== userId && senderId !== listenerUserId) return;
 
-        const roomId = roomForSession(sessionId);
+        const roomId = roomForSession(resolvedSessionId);
         socket.to(roomId).emit("chat:typing", {
-          sessionId,
+          sessionId: resolvedSessionId, // Send back real ID
           sender: senderId,
           isTyping: !!isTyping,
         });
@@ -190,8 +249,18 @@ export default function sessionChatHandler(io) {
 
     socket.on("chat:leave", async ({ sessionId }) => {
       if (!sessionId) return;
-      const roomId = roomForSession(sessionId);
-      socket.leave(roomId);
+      // We can't really resolve session from ID easily here without user context in payload or using socket.user. 
+      // Assuming for 'leave' valid ObjectId is usually passed. 
+      // If we really want to support composite ID for leave, we can call resolveSessionFromId.
+      let resolvedSessionId = sessionId;
+      if (sessionId.includes('_') && socket.user?.id) {
+        resolvedSessionId = await resolveSessionFromId(sessionId, String(socket.user.id));
+      }
+
+      if (resolvedSessionId && mongoose.Types.ObjectId.isValid(resolvedSessionId)) {
+        const roomId = roomForSession(resolvedSessionId);
+        socket.leave(roomId);
+      }
     });
   });
 }
