@@ -96,3 +96,24 @@ export const unflagMessage = async (req, res) => {
     res.status(400).json({ success: false, error: error.message });
   }
 };
+
+export const getChatHistoryByUser = async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const currentUserId = req.user.id;
+
+    const messages = await ChatMessage.find({
+      $or: [
+        { sender: currentUserId, receiver: userId },
+        { sender: userId, receiver: currentUserId },
+      ],
+    })
+      .sort({ createdAt: 1 })
+      .populate("sender", "username email profileImage")
+      .populate("receiver", "username email profileImage");
+
+    res.status(200).json({ success: true, count: messages.length, data: messages });
+  } catch (error) {
+    res.status(400).json({ success: false, error: error.message });
+  }
+};
