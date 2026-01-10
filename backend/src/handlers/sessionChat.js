@@ -12,12 +12,8 @@ const roomForSession = (sessionId) => `session_chat_${sessionId}`;
 const resolveSessionFromId = async (inputSessionId, socketUserId, type = "chat") => {
   if (!inputSessionId) return null;
 
-  // 1. If valid ObjectId, assume it's a real Session ID
-  if (mongoose.Types.ObjectId.isValid(inputSessionId)) {
-    return inputSessionId;
-  }
-
-  // 2. Check for composite ID format (id1_id2)
+  // 1. Check for composite ID format (id1_id2) FIRST
+  // This prevents strings with underscores from reaching ObjectId validation or falling through to be treated as ID.
   if (typeof inputSessionId === 'string' && inputSessionId.includes('_')) {
     const parts = inputSessionId.split('_');
     if (parts.length === 2 && mongoose.Types.ObjectId.isValid(parts[0]) && mongoose.Types.ObjectId.isValid(parts[1])) {
@@ -25,7 +21,8 @@ const resolveSessionFromId = async (inputSessionId, socketUserId, type = "chat")
       const otherUserId = parts[0] === socketUserId ? parts[1] : (parts[1] === socketUserId ? parts[0] : null);
 
       if (!otherUserId) {
-        throw new Error("Invalid composite session ID: Requester not in participants");
+        console.warn(`[resolveSessionFromId] Requester ${socketUserId} not in composite ID ${inputSessionId}`);
+        return null;
       }
 
       // We need to resolve who is the listener. 
@@ -48,9 +45,16 @@ const resolveSessionFromId = async (inputSessionId, socketUserId, type = "chat")
         }
       }
     }
+    // If it has an underscore but fails any check above, it is NOT a valid ID. Return null.
+    return null;
   }
 
-  // Return original (or null) if resolution failed, to let downstream handlers handle errors or auto-creation logic
+  // 2. If valid ObjectId, assume it's a real Session ID
+  if (mongoose.Types.ObjectId.isValid(inputSessionId)) {
+    return inputSessionId;
+  }
+
+  // Return null if resolution failed
   return null;
 };
 
@@ -78,7 +82,7 @@ export default function sessionChatHandler(io) {
           } else {
             // If we couldn't resolve from ID string AND no explicit listener details, we can't join.
             if (sessionId) console.warn(`[chat:join] Could not resolve session: ${sessionId}`);
-            return; // Or throw error? validation logic below will handle it
+            return;
           }
         }
 
