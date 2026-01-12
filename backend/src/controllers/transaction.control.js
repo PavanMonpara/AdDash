@@ -9,39 +9,39 @@ import Transaction from "../models/model.transaction.js";
  */
 export const createTransaction = async (req, res) => {
   try {
-    const { 
-      user, 
-      recipient, 
-      session, 
-      type, 
-      method, 
-      amount, 
-      status = 'pending', 
+    const {
+      user,
+      recipient,
+      session,
+      type,
+      method,
+      amount,
+      status = 'pending',
       razorpayId,
       notes = ''
     } = req.body;
 
     // Validate required fields
     if (!user || !type || !method || amount === undefined) {
-      return res.status(400).json({ 
-        success: false, 
-        error: "Missing required fields: user, type, method, and amount are required" 
+      return res.status(400).json({
+        success: false,
+        error: "Missing required fields: user, type, method, and amount are required"
       });
     }
 
     // Validate transaction type specific requirements
     if (['session payment', 'refund', 'commission'].includes(type)) {
       if (!recipient) {
-        return res.status(400).json({ 
-          success: false, 
-          error: `Recipient is required for transaction type: ${type}` 
+        return res.status(400).json({
+          success: false,
+          error: `Recipient is required for transaction type: ${type}`
         });
       }
-      
+
       if (type === 'session payment' && !session) {
-        return res.status(400).json({ 
-          success: false, 
-          error: "Session ID is required for session payment" 
+        return res.status(400).json({
+          success: false,
+          error: "Session ID is required for session payment"
         });
       }
     }
@@ -85,17 +85,132 @@ export const createTransaction = async (req, res) => {
     // TODO: Trigger notification to both parties
     // await notifyTransaction(populatedTxn);
 
-    res.status(201).json({ 
-      success: true, 
+    res.status(201).json({
+      success: true,
       message: 'Transaction created successfully',
-      data: populatedTxn 
+      data: populatedTxn
     });
   } catch (error) {
     console.error('Transaction creation error:', error);
-    res.status(400).json({ 
-      success: false, 
-      error: error.message || 'Failed to create transaction' 
+    res.status(400).json({
+      success: false,
+      error: error.message || 'Failed to create transaction'
     });
+  }
+};
+
+/**
+ * Impose a penalty on a user
+ * Deducts amount from wallet and creates a transaction record
+ */
+export const imposePenalty = async (req, res) => {
+  try {
+    const { userId, amount, reason } = req.body;
+
+    if (!userId || !amount || !reason) {
+      return res.status(400).json({
+        success: false,
+        error: "userId, amount and reason are required"
+      });
+    }
+
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ success: false, error: "User not found" });
+    }
+
+    // Create penalty transaction
+    const transaction = await Transaction.create({
+      transactionId: `txn_penalty_${Date.now()}`,
+      user: userId,
+      type: 'penalty',
+      method: 'admin',
+      amount: -Math.abs(amount), // Negative for deduction
+      status: 'completed',
+      notes: reason
+    });
+
+    // Deduct from user wallet
+    user.walletBalance = (user.walletBalance || 0) - Math.abs(amount);
+    await user.save();
+
+    res.status(200).json({
+      success: true,
+      message: "Penalty imposed successfully",
+      data: {
+        transaction,
+        newBalance: user.walletBalance
+      }
+    });
+  } catch (error) {
+    console.error('Impose penalty error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+/**
+ * Recharge user wallet
+ */
+export const rechargeWallet = async (req, res) => {
+  try {
+    const { userId, amount, paymentId, method = 'razorpay' } = req.body;
+
+    if (!userId || !amount) {
+      return res.status(400).json({
+        success: false,
+        error: "userId and amount are required"
+      });
+    }
+
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ success: false, error: "User not found" });
+    }
+
+    // Create recharge transaction
+    const transaction = await Transaction.create({
+      transactionId: `txn_recharge_${Date.now()}`,
+      user: userId,
+      type: 'recharge',
+      method,
+      amount: Math.abs(amount),
+      status: 'completed',
+      razorpayId: paymentId || '-',
+      notes: 'Wallet recharge'
+    });
+
+    // Update user wallet
+    user.walletBalance = (user.walletBalance || 0) + Math.abs(amount);
+    await user.save();
+
+    res.status(200).json({
+      success: true,
+      message: "Wallet recharged successfully",
+      data: {
+        transaction,
+        newBalance: user.walletBalance
+      }
+    });
+
+  } catch (error) {
+    console.error('Recharge wallet error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+/**
+ * Get Wallet Balance
+ */
+export const getWalletBalance = async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ success: false, error: "User not found" });
+    }
+    res.status(200).json({ success: true, balance: user.walletBalance || 0 });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
   }
 };
 
@@ -110,7 +225,7 @@ export const getAllTransactions = async (req, res) => {
 
     // Build filter
     const filter = {};
-    
+
     if (req.query.status) filter.status = req.query.status;
     if (req.query.type) filter.type = req.query.type;
     if (req.query.userId) filter.user = req.query.userId;
@@ -155,9 +270,9 @@ export const getAllTransactions = async (req, res) => {
     });
   } catch (error) {
     console.error('Get transactions error:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: 'Failed to fetch transactions' 
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch transactions'
     });
   }
 };
@@ -169,23 +284,23 @@ export const getTransactionById = async (req, res) => {
   try {
     const txn = await Transaction.findById(req.params.id)
       .populate('userDetails recipientDetails sessionDetails');
-      
+
     if (!txn) {
-      return res.status(404).json({ 
-        success: false, 
-        error: "Transaction not found" 
+      return res.status(404).json({
+        success: false,
+        error: "Transaction not found"
       });
     }
-    
-    res.status(200).json({ 
-      success: true, 
-      data: txn 
+
+    res.status(200).json({
+      success: true,
+      data: txn
     });
   } catch (error) {
     console.error('Get transaction error:', error);
-    res.status(400).json({ 
-      success: false, 
-      error: error.message || 'Failed to fetch transaction' 
+    res.status(400).json({
+      success: false,
+      error: error.message || 'Failed to fetch transaction'
     });
   }
 };
@@ -200,15 +315,15 @@ export const updateTransaction = async (req, res) => {
 
     // Prevent updating certain fields
     const allowedUpdates = [
-      'status', 
-      'notes', 
+      'status',
+      'notes',
       'razorpayId',
       'method',
       'amount',
       'recipient',
       'session'
     ];
-    
+
     // Validate status values
     if (updates.status && !['pending', 'completed', 'failed'].includes(updates.status)) {
       return res.status(400).json({
@@ -216,7 +331,7 @@ export const updateTransaction = async (req, res) => {
         error: 'Invalid status value. Must be one of: pending, completed, failed'
       });
     }
-    
+
     const updateData = {};
     Object.keys(updates).forEach(key => {
       if (allowedUpdates.includes(key)) {
@@ -225,19 +340,19 @@ export const updateTransaction = async (req, res) => {
     });
 
     const updatedTxn = await Transaction.findByIdAndUpdate(
-      id, 
+      id,
       { $set: updateData },
-      { 
-        new: true, 
-        runValidators: true 
+      {
+        new: true,
+        runValidators: true
       }
     )
-    .populate('userDetails recipientDetails sessionDetails');
+      .populate('userDetails recipientDetails sessionDetails');
 
     if (!updatedTxn) {
-      return res.status(404).json({ 
-        success: false, 
-        error: "Transaction not found" 
+      return res.status(404).json({
+        success: false,
+        error: "Transaction not found"
       });
     }
 
@@ -246,16 +361,16 @@ export const updateTransaction = async (req, res) => {
     //   await notifyTransactionStatus(updatedTxn);
     // }
 
-    res.status(200).json({ 
-      success: true, 
+    res.status(200).json({
+      success: true,
       message: 'Transaction updated successfully',
-      data: updatedTxn 
+      data: updatedTxn
     });
   } catch (error) {
     console.error('Update transaction error:', error);
-    res.status(400).json({ 
-      success: false, 
-      error: error.message || 'Failed to update transaction' 
+    res.status(400).json({
+      success: false,
+      error: error.message || 'Failed to update transaction'
     });
   }
 };
@@ -272,24 +387,24 @@ export const deleteTransaction = async (req, res) => {
     );
 
     if (!deletedTxn) {
-      return res.status(404).json({ 
-        success: false, 
-        error: "Transaction not found" 
+      return res.status(404).json({
+        success: false,
+        error: "Transaction not found"
       });
     }
 
     // TODO: Trigger notification about transaction cancellation
-    
-    res.status(200).json({ 
-      success: true, 
+
+    res.status(200).json({
+      success: true,
       message: 'Transaction cancelled successfully',
-      data: deletedTxn 
+      data: deletedTxn
     });
   } catch (error) {
     console.error('Delete transaction error:', error);
-    res.status(400).json({ 
-      success: false, 
-      error: error.message || 'Failed to delete transaction' 
+    res.status(400).json({
+      success: false,
+      error: error.message || 'Failed to delete transaction'
     });
   }
 };
@@ -336,19 +451,23 @@ export const getUserTransactions = async (req, res) => {
     // Calculate total spent and earned
     const [totalSpent, totalEarned] = await Promise.all([
       Transaction.aggregate([
-        { $match: { 
-          user: mongoose.Types.ObjectId(userId), 
-          status: 'completed',
-          type: { $in: ['session payment', 'withdrawal'] }
-        }},
+        {
+          $match: {
+            user: mongoose.Types.ObjectId(userId),
+            status: 'completed',
+            type: { $in: ['session payment', 'withdrawal'] }
+          }
+        },
         { $group: { _id: null, total: { $sum: '$amount' } } }
       ]),
       Transaction.aggregate([
-        { $match: { 
-          recipient: mongoose.Types.ObjectId(userId), 
-          status: 'completed',
-          type: { $in: ['session payment', 'commission'] }
-        }},
+        {
+          $match: {
+            recipient: mongoose.Types.ObjectId(userId),
+            status: 'completed',
+            type: { $in: ['session payment', 'commission'] }
+          }
+        },
         { $group: { _id: null, total: { $sum: '$amount' } } }
       ])
     ]);
@@ -372,9 +491,9 @@ export const getUserTransactions = async (req, res) => {
     });
   } catch (error) {
     console.error('Get user transactions error:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: 'Failed to fetch user transactions' 
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch user transactions'
     });
   }
 };

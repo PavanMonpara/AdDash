@@ -6,22 +6,26 @@ import {
   promoteToListener,
   removeListener,
   updateListener,
-  getAvailableListeners, // ye naya wala hai
+  getAvailableListeners,
   suspendListener,
+  toggleOnlineStatus // Added this
 } from "../controllers/listener.control.js";
 
 import { verifyToken } from "../middlewares/verifyToken.js";
 import { isSuperAdmin } from "../middlewares/isSuperAdmin.js";
 import { isAuthenticated } from "../middlewares/isAuthenticated.js";
-import { uploadProfilePic } from "../middlewares/upload.js"; // ye naya wala hai
+import { uploadProfilePic } from "../middlewares/upload.js";
 
 const listener = Router();
+
+// Toggle Online Status
+listener.patch("/toggle-online", verifyToken, isAuthenticated, toggleOnlineStatus);
 
 // SuperAdmin only
 listener.post("/promote", verifyToken, isSuperAdmin, promoteToListener);
 listener.post("/suspend/:id", verifyToken, isSuperAdmin, suspendListener);
 
-listener.put("/:id", 
+listener.put("/:id",
   verifyToken,
   isAuthenticated,
   uploadProfilePic,           // ← YE NAYA HAI

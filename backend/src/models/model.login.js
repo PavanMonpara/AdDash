@@ -36,6 +36,7 @@ const userScheme = new Schema({
     type: String,
     default: "https://your-default-avatar-url.com/default-avatar.png"
   },
+  walletBalance: { type: Number, default: 0 },
   // Soft delete fields
   isDeleted: { type: Boolean, default: false },
   deletedAt: { type: Date, default: null }

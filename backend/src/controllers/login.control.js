@@ -7,6 +7,7 @@ import jwt from "jsonwebtoken";
 import dotenv from "dotenv";
 import { BlockedUser } from "../models/model.blockedUser.js";
 import { SuspendedListener } from "../models/model.suspendedListener.js";
+import Transaction from "../models/model.transaction.js";
 dotenv.config();
 
 const JWT_SECRET = process.env.JWT_SECRET;
@@ -280,7 +281,22 @@ const appLogin = async (req, res) => {
       if (referredByUser) {
         referredByUser.referredUsers = referredByUser.referredUsers || [];
         referredByUser.referredUsers.push(user._id);
+
+        // REWARD LOGIC: Credit Referrer
+        const REFERRAL_BONUS = 50;
+        referredByUser.walletBalance = (referredByUser.walletBalance || 0) + REFERRAL_BONUS;
         await referredByUser.save();
+
+        // Create Transaction Record for Bonus
+        await Transaction.create({
+          transactionId: `txn_ref_${Date.now()}`,
+          user: referredByUser._id,
+          type: 'referral_bonus',
+          method: 'system',
+          amount: REFERRAL_BONUS,
+          status: 'completed',
+          notes: `Referral bonus for user ${user.username}`
+        });
       }
     } else {
       // Existing user

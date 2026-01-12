@@ -4,6 +4,7 @@ import jwt from "jsonwebtoken";
 import { User } from "../models/model.login.js";
 import { BlockedUser } from "../models/model.blockedUser.js";
 import { SuspendedListener } from "../models/model.suspendedListener.js";
+import Listener from "../models/model.listener.js";
 import supportChatHandler from "../handlers/supportChat.js";
 import sessionChatHandler from "../handlers/sessionChat.js";
 import sessionCallHandler from "../handlers/sessionCall.js";
@@ -106,11 +107,29 @@ export const initSocket = (httpServer, options = {}) => {
   });
 
   // Global connection monitoring
-  ioInstance.on("connection", (socket) => {
+  ioInstance.on("connection", async (socket) => {
     console.log(`[Socket] Connected: ${socket.id} | User: ${socket.user?.username || "Unknown"} (${socket.user?.id})`);
 
-    socket.on("disconnect", (reason) => {
+    // Automate Online Status - Set to Online
+    if (socket.user && (socket.user.role === 'listener' || socket.user.role === 'Listener')) {
+      try {
+        await Listener.findOneAndUpdate({ userId: socket.user.id }, { isOnline: true });
+      } catch (err) {
+        console.error("Error setting listener online:", err);
+      }
+    }
+
+    socket.on("disconnect", async (reason) => {
       console.log(`[Socket] Disconnected: ${socket.id} | Reason: ${reason}`);
+
+      // Automate Online Status - Set to Offline
+      if (socket.user && (socket.user.role === 'listener' || socket.user.role === 'Listener')) {
+        try {
+          await Listener.findOneAndUpdate({ userId: socket.user.id }, { isOnline: false });
+        } catch (err) {
+          console.error("Error setting listener offline:", err);
+        }
+      }
     });
   });
 

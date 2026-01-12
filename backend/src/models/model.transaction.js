@@ -15,25 +15,25 @@ const transactionSchema = new Schema(
     recipient: {
       type: Schema.Types.ObjectId,
       ref: "Listener",
-      required: function() {
+      required: function () {
         return ['session payment', 'refund', 'commission'].includes(this.type);
       }
     },
     session: {
       type: Schema.Types.ObjectId,
       ref: "Session",
-      required: function() {
+      required: function () {
         return this.type === 'session payment';
       }
     },
     type: {
       type: String,
-      enum: ["deposit", "withdrawal", "session payment", "refund", "commission"],
+      enum: ["deposit", "withdrawal", "session payment", "refund", "commission", "penalty", "recharge", "referral_bonus"],
       required: true,
     },
     method: {
       type: String,
-      enum: ["razorpay", "wallet", "bank transfer", "auto"],
+      enum: ["razorpay", "wallet", "bank transfer", "auto", "system", "admin"],
       required: true,
     },
     amount: {

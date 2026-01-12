@@ -63,7 +63,7 @@ export const getAllListeners = async (req, res) => {
     if (req.query.status) filter.status = req.query.status;
 
     const listeners = await Listener.find(filter)
-      .populate("userId", "username email cCode phoneNumber role status alias gender lang")
+      .populate("userId")
       .skip(skip)
       .limit(limit)
       .sort({ createdAt: -1 });
@@ -87,10 +87,7 @@ export const getAllListeners = async (req, res) => {
 
 export const getListenerById = async (req, res) => {
   try {
-    const listener = await Listener.findById(req.params.id).populate(
-      "userId",
-      "username email alias gender lang about"
-    );
+    const listener = await Listener.findById(req.params.id).populate("userId");
     if (!listener) return res.status(404).json({ message: "Listener not found" });
     res.status(200).json(listener);
   } catch (error) {
@@ -135,11 +132,10 @@ export const getAvailableListeners = async (req, res) => {
           lang: seekerLang,
           status: "active",
         },
-        // AGE & PROFILEPIC ADDED HERE
-        select:
-          "username alias gender lang about phoneNumber age profilePic",
+        // AGE & PROFILEPIC ADDED HERE - Now fetching ALL fields as requested
+        // select: "" // Empty string or removing select to get everything
       })
-      .sort({ rating: -1, chargesPerMinute: 1 })
+      .sort({ isOnline: -1, rating: -1, chargesPerMinute: 1 })
       .skip(skip)
       .limit(limit)
       .lean();
@@ -150,16 +146,15 @@ export const getAvailableListeners = async (req, res) => {
       .map((listener) => ({
         ...listener,
         user: {
+          ...listener.userId, // Spread ALL user data
+          // Explicit overrides/defaults if needed, but spreading ensures we get everything
           username: listener.userId.username || "Listener",
           alias: listener.userId.alias || listener.userId.username,
-          gender: listener.userId.gender,
-          lang: listener.userId.lang,
-          about: listener.userId.about || "",
-          phoneNumber: listener.userId.phoneNumber,
-          age: listener.userId.age || null,
-          profilePic: listener.userId.profilePic || null,
         },
-        userId: undefined, // hide for security
+        userId: undefined, // hide for security if preferred, but user asked for "all data"
+        // If they want the raw object structure, they might want userId to stay. 
+        // But for consistency with existing frontend processing, we kept 'user' key.
+        // I will keep userId as undefined to avoid duplication if 'user' has everything.
       }));
 
     // Accurate total count
@@ -235,16 +230,19 @@ export const updateListener = async (req, res) => {
       age: Number,
       gender: (val) => ["male", "female", "other"].includes(val),
       lang: String,
+      profilePic: String // Allow profilePic update from body if provided
     };
 
     const userUpdate = {};
     Object.keys(allowedUserFields).forEach((field) => {
       if (updateData[field] !== undefined) {
         if (typeof allowedUserFields[field] === "function") {
+          // If it's a validation function
           if (allowedUserFields[field](updateData[field])) {
             userUpdate[field] = updateData[field];
           }
         } else {
+          // If it's just a type constructor (String, Number) - optional: cast or just assign
           userUpdate[field] = updateData[field];
         }
       }
@@ -254,7 +252,7 @@ export const updateListener = async (req, res) => {
       await User.findByIdAndUpdate(listener.userId, userUpdate);
     }
 
-    // 3. Handle profile picture
+    // 3. Handle profile picture (File upload takes precedence if both provided)
     if (req.file) {
       const profilePicUrl = `/uploads/profiles/${req.file.filename}`;
       await User.findByIdAndUpdate(listener.userId, { profilePic: profilePicUrl });
@@ -271,7 +269,7 @@ export const updateListener = async (req, res) => {
     //  // Final fresh data
     const updatedListener = await Listener.findById(id).populate({
       path: "userId",
-      select: "username alias phoneNumber gender lang about profilePic age",
+      // select: "username alias phoneNumber gender lang about profilePic age", // Removed select to return ALL
     });
 
     const user = updatedListener.userId;
@@ -282,14 +280,13 @@ export const updateListener = async (req, res) => {
       listener: {
         ...updatedListener.toObject(),
         user: {
+          ...user.toObject(), // Spread full user object
+          // These fallbacks are good but if we spread ...user.toObject(), we get everything.
+          // We can keep them to ensure specific formatting if needed, 
+          // or just rely on the spread. 
+          // I will keep the spread and just overlay important defaults if missing.
           username: user.username,
           alias: user.alias || user.username,
-          gender: user.gender,
-          lang: user.lang,
-          about: user.about || "",
-          age: user.age || null,
-          phoneNumber: user.phoneNumber,
-          profilePic: user.profilePic || null,
         },
         userId: undefined,
       },
@@ -373,5 +370,26 @@ export const suspendListener = async (req, res) => {
       message: "Server error",
       error: error.message,
     });
+  }
+};
+
+export const toggleOnlineStatus = async (req, res) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) return res.status(401).json({ message: "Unauthorized" });
+
+    const listener = await Listener.findOne({ userId });
+    if (!listener) return res.status(404).json({ message: "Listener not found" });
+
+    listener.isOnline = !listener.isOnline;
+    await listener.save();
+
+    res.status(200).json({
+      success: true,
+      isOnline: listener.isOnline,
+      message: `You are now ${listener.isOnline ? "Online" : "Offline"}`
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
   }
 };
