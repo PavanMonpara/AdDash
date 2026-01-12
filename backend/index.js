@@ -6,6 +6,7 @@ import routes from "./src/routes/api.js";
 import appRoute from "./src/routes/app/api.js";
 import exportRoutes from "./src/routes/export.js";
 import { initSocket } from "./src/socket/socketManager.js";
+import { startPenaltyCron } from "./src/cron/penaltyCron.js";
 
 const app = express();
 const port = Number(process.env.PORT || 3001);
@@ -35,6 +36,7 @@ const start = async () => {
 
     server.listen(port, () => {
         console.log(`Server is running at http://localhost:${port}`);
+        startPenaltyCron();
     });
 };
 

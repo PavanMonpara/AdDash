@@ -373,6 +373,54 @@ export const suspendListener = async (req, res) => {
   }
 };
 
+export const imposePenalty = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ success: false, message: "Invalid listener ID" });
+    }
+
+    const listener = await Listener.findById(id).populate("userId");
+    if (!listener) {
+      return res.status(404).json({ success: false, message: "Listener not found" });
+    }
+
+    const { userId } = listener;
+    // Calculate date 5 days from now
+    const suspendedUntil = new Date();
+    suspendedUntil.setDate(suspendedUntil.getDate() + 5);
+
+    // Update SuspendedListener record
+    await SuspendedListener.findOneAndUpdate(
+      { listenerId: listener._id },
+      {
+        userId: userId._id,
+        listenerId: listener._id,
+        email: userId.email,
+        username: userId.username,
+        cCode: userId.cCode,
+        phoneNumber: userId.phoneNumber,
+        suspendedUntil: suspendedUntil
+      },
+      { upsert: true, new: true }
+    );
+
+    // Update listener status
+    listener.status = "suspended";
+    await listener.save();
+
+    res.status(200).json({
+      success: true,
+      message: "Listener suspended for 5 days as penalty.",
+      suspendedUntil
+    });
+  } catch (error) {
+    console.error("imposePenalty error:", error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
 export const toggleOnlineStatus = async (req, res) => {
   try {
     const userId = req.user?.id;

@@ -36,6 +36,9 @@ const suspendedListenerSchema = new Schema(
       type: Date,
       default: Date.now,
     },
+    suspendedUntil: {
+      type: Date,
+    },
   }
 );
 

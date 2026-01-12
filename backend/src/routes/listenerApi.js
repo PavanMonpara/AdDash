@@ -8,6 +8,7 @@ import {
   updateListener,
   getAvailableListeners,
   suspendListener,
+  imposePenalty,
   toggleOnlineStatus // Added this
 } from "../controllers/listener.control.js";
 
@@ -24,6 +25,7 @@ listener.patch("/toggle-online", verifyToken, isAuthenticated, toggleOnlineStatu
 // SuperAdmin only
 listener.post("/promote", verifyToken, isSuperAdmin, promoteToListener);
 listener.post("/suspend/:id", verifyToken, isSuperAdmin, suspendListener);
+listener.post("/penalty/:id", verifyToken, isSuperAdmin, imposePenalty);
 
 listener.put("/:id",
   verifyToken,

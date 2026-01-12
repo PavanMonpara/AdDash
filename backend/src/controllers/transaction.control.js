@@ -99,54 +99,7 @@ export const createTransaction = async (req, res) => {
   }
 };
 
-/**
- * Impose a penalty on a user
- * Deducts amount from wallet and creates a transaction record
- */
-export const imposePenalty = async (req, res) => {
-  try {
-    const { userId, amount, reason } = req.body;
 
-    if (!userId || !amount || !reason) {
-      return res.status(400).json({
-        success: false,
-        error: "userId, amount and reason are required"
-      });
-    }
-
-    const user = await User.findById(userId);
-    if (!user) {
-      return res.status(404).json({ success: false, error: "User not found" });
-    }
-
-    // Create penalty transaction
-    const transaction = await Transaction.create({
-      transactionId: `txn_penalty_${Date.now()}`,
-      user: userId,
-      type: 'penalty',
-      method: 'admin',
-      amount: -Math.abs(amount), // Negative for deduction
-      status: 'completed',
-      notes: reason
-    });
-
-    // Deduct from user wallet
-    user.walletBalance = (user.walletBalance || 0) - Math.abs(amount);
-    await user.save();
-
-    res.status(200).json({
-      success: true,
-      message: "Penalty imposed successfully",
-      data: {
-        transaction,
-        newBalance: user.walletBalance
-      }
-    });
-  } catch (error) {
-    console.error('Impose penalty error:', error);
-    res.status(500).json({ success: false, error: error.message });
-  }
-};
 
 /**
  * Recharge user wallet
