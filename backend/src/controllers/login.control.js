@@ -284,18 +284,35 @@ const appLogin = async (req, res) => {
 
         // REWARD LOGIC: Credit Referrer
         const REFERRAL_BONUS = 50;
+        const REFEREE_BONUS = 30;
+
         referredByUser.walletBalance = (referredByUser.walletBalance || 0) + REFERRAL_BONUS;
         await referredByUser.save();
 
-        // Create Transaction Record for Bonus
+        // Create Transaction Record for Referrer
         await Transaction.create({
-          transactionId: `txn_ref_${Date.now()}`,
+          transactionId: `txn_ref_referrer_${Date.now()}`,
           user: referredByUser._id,
           type: 'referral_bonus',
           method: 'system',
           amount: REFERRAL_BONUS,
           status: 'completed',
-          notes: `Referral bonus for user ${user.username}`
+          notes: `Referral bonus for inviting user ${user.username}`
+        });
+
+        // REWARD LOGIC: Credit Referee (New User)
+        user.walletBalance = (user.walletBalance || 0) + REFEREE_BONUS;
+        await user.save();
+
+        // Create Transaction Record for Referee
+        await Transaction.create({
+          transactionId: `txn_ref_referee_${Date.now()}`,
+          user: user._id,
+          type: 'referral_bonus',
+          method: 'system',
+          amount: REFEREE_BONUS,
+          status: 'completed',
+          notes: `Referral bonus for using referral code from ${referredByUser.username}`
         });
       }
     } else {
